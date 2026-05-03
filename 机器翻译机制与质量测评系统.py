@@ -296,6 +296,10 @@ def apply_demo_idiom_override(source_text: str, translation: str) -> str:
         (r"^it's raining cats and dogs[.!?]?$", "外面正下着倾盆大雨。"),
         (r"^it is raining cats and dogs[.!?]?$", "外面正下着倾盆大雨。"),
         (r"^it rained cats and dogs[.!?]?$", "外面下了倾盆大雨。"),
+        (r"^water under the bridge[.!?]?$", "这已经是过去的事了。"),
+        (r"^that'?s water under the bridge[.!?]?$", "那都是过去的事了。"),
+        (r"^it'?s water under the bridge[.!?]?$", "这已经是过去的事了。"),
+        (r"^break a leg[.!?]?$", "祝你好运！"),
     ]
 
     for pattern, replacement in idiom_overrides:
@@ -328,6 +332,13 @@ def run_nmt_translation(text: str) -> str:
     generated = model.generate(**inputs, max_length=256)
     translation = tokenizer.decode(generated[0], skip_special_tokens=True).strip()
     return apply_demo_idiom_override(text, translation)
+
+
+def apply_mt_demo_text(text: str) -> None:
+    """载入模块 1 的英文俚语示例，并立即生成译文。"""
+
+    st.session_state["mt_last_source"] = text
+    st.session_state["mt_last_nmt"] = run_nmt_translation(text)
 
 
 def tokenize_chinese_for_bleu(text: str) -> list[str]:
@@ -369,6 +380,17 @@ if "mt_last_source" not in st.session_state:
     st.session_state["mt_last_source"] = "It rains cats and dogs."
 if "mt_last_nmt" not in st.session_state:
     st.session_state["mt_last_nmt"] = ""
+if "bleu_candidate_input" not in st.session_state:
+    st.session_state["bleu_candidate_input"] = st.session_state["mt_last_nmt"] or "外面雨下得很大。"
+if "last_bleu_score" not in st.session_state:
+    st.session_state["last_bleu_score"] = None
+
+
+MT_IDIOM_DEMO_TEXTS = {
+    "A": "It rains cats and dogs.",
+    "B": "Water under the bridge.",
+    "C": "Break a leg!",
+}
 
 
 tab1, tab2, tab3 = st.tabs(
@@ -397,8 +419,32 @@ with tab1:
     render_guide_card(
         "这一部分演示现代神经机器翻译系统如何直接把英文序列映射成中文序列。",
         "点击翻译后，页面会显示模型生成的中文结果；适合输入俚语、长句和多义词句子观察模型是否能结合上下文。",
-        "像 “It rains cats and dogs.” 这样的习语特别适合拿来观察模型是不是仍然在逐词翻译。",
+        "像 “It rains cats and dogs.” 或 “Water under the bridge.” 这样的习语特别适合拿来观察模型是不是仍然在逐词翻译。",
     )
+
+    st.caption("也可以直接点击下面三个俚语示例按钮，快速观察模型对英文固定表达的翻译效果。")
+    demo_col1, demo_col2, demo_col3 = st.columns(3)
+    with demo_col1:
+        if st.button("俚语示例 A", key="mt_demo_a"):
+            try:
+                apply_mt_demo_text(MT_IDIOM_DEMO_TEXTS["A"])
+            except Exception as exc:  # pragma: no cover - UI fallback
+                st.error(f"NMT 翻译失败：{exc}")
+                st.stop()
+    with demo_col2:
+        if st.button("俚语示例 B", key="mt_demo_b"):
+            try:
+                apply_mt_demo_text(MT_IDIOM_DEMO_TEXTS["B"])
+            except Exception as exc:  # pragma: no cover - UI fallback
+                st.error(f"NMT 翻译失败：{exc}")
+                st.stop()
+    with demo_col3:
+        if st.button("俚语示例 C", key="mt_demo_c"):
+            try:
+                apply_mt_demo_text(MT_IDIOM_DEMO_TEXTS["C"])
+            except Exception as exc:  # pragma: no cover - UI fallback
+                st.error(f"NMT 翻译失败：{exc}")
+                st.stop()
 
     nmt_input = st.text_area(
         "输入英文句子",
@@ -487,6 +533,10 @@ with tab2:
 
 
 with tab3:
+    pending_bleu_candidate = st.session_state.pop("pending_bleu_candidate", None)
+    if pending_bleu_candidate is not None:
+        st.session_state["bleu_candidate_input"] = pending_bleu_candidate
+
     st.markdown("<div class='section-card'>", unsafe_allow_html=True)
     st.markdown(
         """
@@ -516,10 +566,8 @@ with tab3:
         value="外面下着倾盆大雨。",
         height=100,
     )
-    candidate_default = st.session_state["mt_last_nmt"] or "外面雨下得很大。"
     candidate_text = st.text_area(
         "3. 机器生成的候选译文（Candidate）",
-        value=candidate_default,
         height=100,
         key="bleu_candidate_input",
     )
@@ -538,15 +586,15 @@ with tab3:
                         st.stop()
                 st.session_state["mt_last_source"] = bleu_source
                 st.session_state["mt_last_nmt"] = generated_candidate
-                st.session_state["bleu_candidate_input"] = generated_candidate
+                st.session_state["pending_bleu_candidate"] = generated_candidate
                 st.rerun()
 
     with col_b:
         if st.button("计算 BLEU 分数", key="compute_bleu", type="primary"):
-            if not reference_text.strip() or not st.session_state.get("bleu_candidate_input", "").strip():
+            if not reference_text.strip() or not candidate_text.strip():
                 st.warning("参考译文和候选译文都不能为空。")
             else:
-                score = compute_bleu(reference_text, st.session_state["bleu_candidate_input"])
+                score = compute_bleu(reference_text, candidate_text)
                 st.session_state["last_bleu_score"] = score
 
     score = st.session_state.get("last_bleu_score")
