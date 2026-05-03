@@ -289,7 +289,7 @@ def render_translation_box(label: str, content: str | None, placeholder: str) ->
     )
 
 
-def apply_demo_idiom_override(source_text: str, translation: str) -> str:
+def get_demo_idiom_override(source_text: str) -> str | None:
     normalized = re.sub(r"\s+", " ", source_text.strip().lower())
     idiom_overrides = [
         (r"^it rains cats and dogs[.!?]?$", "外面下着倾盆大雨。"),
@@ -310,10 +310,29 @@ def apply_demo_idiom_override(source_text: str, translation: str) -> str:
                 return replacement.rstrip("。") + "！"
             return replacement
 
+    return None
+
+
+def apply_demo_idiom_override(source_text: str, translation: str) -> str:
+    override = get_demo_idiom_override(source_text)
+    if override is not None:
+        return override
+
     return translation.strip()
 
 
-def run_nmt_translation(text: str) -> str:
+def uses_demo_idiom_override(source_text: str) -> bool:
+    return get_demo_idiom_override(source_text) is not None
+
+
+def suggest_reference_translation(source_text: str) -> str:
+    override = get_demo_idiom_override(source_text)
+    if override is not None:
+        return override
+    return "请手动输入标准中文参考译文。"
+
+
+def run_nmt_translation_raw(text: str) -> str:
     bundle = load_translation_pipeline()
     if bundle["mode"] == "pipeline":
         translator = bundle["pipeline"]
@@ -321,24 +340,29 @@ def run_nmt_translation(text: str) -> str:
         result = translator(text, max_length=256)
 
         if task_name == "text2text-generation":
-            translation = result[0]["generated_text"].strip()
-            return apply_demo_idiom_override(text, translation)
-        translation = result[0].get("translation_text", result[0].get("generated_text", "")).strip()
-        return apply_demo_idiom_override(text, translation)
+            return result[0]["generated_text"].strip()
+        return result[0].get("translation_text", result[0].get("generated_text", "")).strip()
 
     tokenizer = bundle["tokenizer"]
     model = bundle["model"]
     inputs = tokenizer(text, return_tensors="pt", truncation=True, max_length=256)
     generated = model.generate(**inputs, max_length=256)
-    translation = tokenizer.decode(generated[0], skip_special_tokens=True).strip()
-    return apply_demo_idiom_override(text, translation)
+    return tokenizer.decode(generated[0], skip_special_tokens=True).strip()
+
+
+def run_nmt_translation(text: str) -> str:
+    """兼容已有调用的统一入口，返回模型原始输出。"""
+
+    return run_nmt_translation_raw(text)
 
 
 def apply_mt_demo_text(text: str) -> None:
     """载入模块 1 的英文俚语示例，并立即生成译文。"""
 
     st.session_state["mt_last_source"] = text
-    st.session_state["mt_last_nmt"] = run_nmt_translation(text)
+    st.session_state["mt_last_nmt"] = run_nmt_translation_raw(text)
+    st.session_state["bleu_reference_input"] = suggest_reference_translation(text)
+    st.session_state["bleu_candidate_input"] = st.session_state["mt_last_nmt"]
 
 
 def tokenize_chinese_for_bleu(text: str) -> list[str]:
@@ -382,6 +406,8 @@ if "mt_last_nmt" not in st.session_state:
     st.session_state["mt_last_nmt"] = ""
 if "bleu_candidate_input" not in st.session_state:
     st.session_state["bleu_candidate_input"] = st.session_state["mt_last_nmt"] or "外面雨下得很大。"
+if "bleu_reference_input" not in st.session_state:
+    st.session_state["bleu_reference_input"] = suggest_reference_translation(st.session_state["mt_last_source"])
 if "last_bleu_score" not in st.session_state:
     st.session_state["last_bleu_score"] = None
 
@@ -458,7 +484,7 @@ with tab1:
         else:
             with st.spinner("正在加载翻译模型并生成中文译文..."):
                 try:
-                    translation = run_nmt_translation(nmt_input)
+                    translation = run_nmt_translation_raw(nmt_input)
                 except Exception as exc:  # pragma: no cover - UI fallback
                     st.error(f"NMT 翻译失败：{exc}")
                     st.stop()
@@ -466,11 +492,27 @@ with tab1:
             st.session_state["mt_last_source"] = nmt_input
             st.session_state["mt_last_nmt"] = translation
 
-    render_translation_box(
-        "NMT Output",
-        st.session_state["mt_last_nmt"],
-        "点击上方按钮后，这里会显示神经机器翻译生成的中文结果。",
-    )
+    if uses_demo_idiom_override(st.session_state["mt_last_source"]):
+        raw_col, demo_col = st.columns(2)
+        with raw_col:
+            render_translation_box(
+                "NMT Raw Output",
+                st.session_state["mt_last_nmt"],
+                "点击上方按钮后，这里会显示模型原始生成的中文结果。",
+            )
+        with demo_col:
+            render_translation_box(
+                "Teaching Reference Paraphrase",
+                get_demo_idiom_override(st.session_state["mt_last_source"]),
+                "当命中教学俚语示例时，这里展示更适合课堂讲解的参考意译。",
+            )
+        st.info("左侧是模型原始输出，右侧是教学参考意译。这样既能保留模型真实表现，也方便课堂展示更自然的习语含义。")
+    else:
+        render_translation_box(
+            "NMT Raw Output",
+            st.session_state["mt_last_nmt"],
+            "点击上方按钮后，这里会显示神经机器翻译生成的中文结果。",
+        )
     st.markdown("</div>", unsafe_allow_html=True)
 
 
@@ -508,7 +550,7 @@ with tab2:
             st.session_state["rule_translation"] = rule_based_translate(compare_input)
             with st.spinner("正在调用神经机器翻译模型..."):
                 try:
-                    st.session_state["mt_last_nmt"] = run_nmt_translation(compare_input)
+                    st.session_state["mt_last_nmt"] = run_nmt_translation_raw(compare_input)
                 except Exception as exc:  # pragma: no cover - UI fallback
                     st.error(f"NMT 翻译失败：{exc}")
                     st.stop()
@@ -525,7 +567,7 @@ with tab2:
     with col2:
         nmt_output = st.session_state["mt_last_nmt"] if compare_input.strip() == st.session_state["mt_last_source"] else ""
         render_translation_box(
-            "Neural Machine Translation",
+            "Neural Machine Translation (Raw)",
             nmt_output,
             "点击“生成对比结果”后，这里显示 NMT 意译结果。",
         )
@@ -536,6 +578,9 @@ with tab3:
     pending_bleu_candidate = st.session_state.pop("pending_bleu_candidate", None)
     if pending_bleu_candidate is not None:
         st.session_state["bleu_candidate_input"] = pending_bleu_candidate
+    pending_bleu_reference = st.session_state.pop("pending_bleu_reference", None)
+    if pending_bleu_reference is not None:
+        st.session_state["bleu_reference_input"] = pending_bleu_reference
 
     st.markdown("<div class='section-card'>", unsafe_allow_html=True)
     st.markdown(
@@ -563,8 +608,8 @@ with tab3:
     )
     reference_text = st.text_area(
         "2. 标准中文参考译文（Reference）",
-        value="外面下着倾盆大雨。",
         height=100,
+        key="bleu_reference_input",
     )
     candidate_text = st.text_area(
         "3. 机器生成的候选译文（Candidate）",
@@ -580,13 +625,14 @@ with tab3:
             else:
                 with st.spinner("正在使用 NMT 生成候选译文..."):
                     try:
-                        generated_candidate = run_nmt_translation(bleu_source)
+                        generated_candidate = run_nmt_translation_raw(bleu_source)
                     except Exception as exc:  # pragma: no cover - UI fallback
                         st.error(f"候选译文生成失败：{exc}")
                         st.stop()
                 st.session_state["mt_last_source"] = bleu_source
                 st.session_state["mt_last_nmt"] = generated_candidate
                 st.session_state["pending_bleu_candidate"] = generated_candidate
+                st.session_state["pending_bleu_reference"] = suggest_reference_translation(bleu_source)
                 st.rerun()
 
     with col_b:
