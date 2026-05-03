@@ -8,6 +8,7 @@ plotly
 gensim
 torch
 transformers
+openai
 sentencepiece
 jieba
 wordcloud

@@ -126,6 +126,78 @@ def get_seq2seq_imports():
     return MarianMTModel, MarianTokenizer
 
 
+def get_openai_api_key() -> str | None:
+    api_key = os.environ.get("OPENAI_API_KEY", "").strip()
+    if api_key:
+        return api_key
+
+    try:
+        if "OPENAI_API_KEY" in st.secrets:
+            secret_key = str(st.secrets["OPENAI_API_KEY"]).strip()
+            if secret_key:
+                return secret_key
+
+        if "openai" in st.secrets:
+            openai_section = st.secrets["openai"]
+            if "api_key" in openai_section:
+                secret_key = str(openai_section["api_key"]).strip()
+                if secret_key:
+                    return secret_key
+    except Exception:
+        pass
+
+    return None
+
+
+def get_openai_translation_model() -> str:
+    model_name = os.environ.get("OPENAI_TRANSLATION_MODEL", "").strip()
+    if model_name:
+        return model_name
+
+    try:
+        if "OPENAI_TRANSLATION_MODEL" in st.secrets:
+            secret_model = str(st.secrets["OPENAI_TRANSLATION_MODEL"]).strip()
+            if secret_model:
+                return secret_model
+
+        if "openai" in st.secrets:
+            openai_section = st.secrets["openai"]
+            if "translation_model" in openai_section:
+                secret_model = str(openai_section["translation_model"]).strip()
+                if secret_model:
+                    return secret_model
+    except Exception:
+        pass
+
+    return "gpt-4.1-mini"
+
+
+def llm_translation_available() -> bool:
+    if not get_openai_api_key():
+        return False
+
+    try:
+        import openai  # noqa: F401
+    except ImportError:
+        return False
+
+    return True
+
+
+@st.cache_resource(show_spinner=False)
+def get_openai_client():
+    api_key = get_openai_api_key()
+    if not api_key:
+        raise RuntimeError("未检测到 OPENAI_API_KEY，暂时无法调用大模型自然意译。")
+
+    try:
+        from openai import OpenAI
+    except ImportError as exc:
+        raise RuntimeError("未安装 openai 库，暂时无法调用大模型自然意译。") from exc
+
+    return OpenAI(api_key=api_key)
+
+
 HF_CACHE_DIR = Path(os.environ.get("NLP_MT_CACHE_DIR", ensure_named_cache_dir("hf_cache_mt")))
 HF_CACHE_DIR.mkdir(exist_ok=True)
 
@@ -289,9 +361,9 @@ def render_translation_box(label: str, content: str | None, placeholder: str) ->
     )
 
 
-def get_demo_idiom_override(source_text: str) -> str | None:
+def get_demo_reference_override(source_text: str) -> str | None:
     normalized = re.sub(r"\s+", " ", source_text.strip().lower())
-    idiom_overrides = [
+    demo_overrides = [
         (r"^it rains cats and dogs[.!?]?$", "外面下着倾盆大雨。"),
         (r"^it's raining cats and dogs[.!?]?$", "外面正下着倾盆大雨。"),
         (r"^it is raining cats and dogs[.!?]?$", "外面正下着倾盆大雨。"),
@@ -300,9 +372,12 @@ def get_demo_idiom_override(source_text: str) -> str | None:
         (r"^that'?s water under the bridge[.!?]?$", "那都是过去的事了。"),
         (r"^it'?s water under the bridge[.!?]?$", "这已经是过去的事了。"),
         (r"^break a leg[.!?]?$", "祝你好运！"),
+        (r"^the meeting starts at nine o'clock tomorrow morning[.!?]?$", "会议明天早上九点开始。"),
+        (r"^she bought a new laptop for her online classes[.!?]?$", "她为网课买了一台新笔记本电脑。"),
+        (r"^please turn off the lights before you leave the room[.!?]?$", "离开房间前请把灯关掉。"),
     ]
 
-    for pattern, replacement in idiom_overrides:
+    for pattern, replacement in demo_overrides:
         if re.fullmatch(pattern, normalized):
             if source_text.strip().endswith("?"):
                 return replacement.rstrip("。") + "？"
@@ -314,19 +389,19 @@ def get_demo_idiom_override(source_text: str) -> str | None:
 
 
 def apply_demo_idiom_override(source_text: str, translation: str) -> str:
-    override = get_demo_idiom_override(source_text)
+    override = get_demo_reference_override(source_text)
     if override is not None:
         return override
 
     return translation.strip()
 
 
-def uses_demo_idiom_override(source_text: str) -> bool:
-    return get_demo_idiom_override(source_text) is not None
+def uses_demo_reference_override(source_text: str) -> bool:
+    return get_demo_reference_override(source_text) is not None
 
 
 def suggest_reference_translation(source_text: str) -> str:
-    override = get_demo_idiom_override(source_text)
+    override = get_demo_reference_override(source_text)
     if override is not None:
         return override
     return "请手动输入标准中文参考译文。"
@@ -356,11 +431,55 @@ def run_nmt_translation(text: str) -> str:
     return run_nmt_translation_raw(text)
 
 
+def run_llm_natural_translation(text: str) -> str:
+    client = get_openai_client()
+    model_name = get_openai_translation_model()
+    response = client.responses.create(
+        model=model_name,
+        input=[
+            {
+                "role": "system",
+                "content": (
+                    "You are a professional English-to-Chinese translator. "
+                    "Translate idioms naturally instead of word-by-word when appropriate. "
+                    "Return only the final Chinese translation with no explanation."
+                ),
+            },
+            {
+                "role": "user",
+                "content": f"Translate this English text into natural Chinese:\n{text.strip()}",
+            },
+        ],
+    )
+    output_text = getattr(response, "output_text", "").strip()
+    if not output_text:
+        raise RuntimeError("大模型返回了空结果，请稍后重试。")
+    return output_text
+
+
+def run_llm_translation_if_available(text: str) -> tuple[str | None, str | None]:
+    if not get_openai_api_key():
+        return None, "未配置 OPENAI_API_KEY，当前仅展示本地 NMT 原始输出。"
+
+    try:
+        import openai  # noqa: F401
+    except ImportError:
+        return None, "当前环境未安装 openai 库，因此无法展示大模型自然意译。"
+
+    try:
+        return run_llm_natural_translation(text), None
+    except Exception as exc:  # pragma: no cover - runtime network/API fallback
+        return None, f"大模型自然意译暂时不可用：{exc}"
+
+
 def apply_mt_demo_text(text: str) -> None:
-    """载入模块 1 的英文俚语示例，并立即生成译文。"""
+    """载入模块 1 的课堂演示英文示例，并立即生成译文。"""
 
     st.session_state["mt_last_source"] = text
     st.session_state["mt_last_nmt"] = run_nmt_translation_raw(text)
+    llm_translation, llm_error = run_llm_translation_if_available(text)
+    st.session_state["mt_last_llm"] = llm_translation or ""
+    st.session_state["mt_last_llm_error"] = llm_error or ""
     st.session_state["bleu_reference_input"] = suggest_reference_translation(text)
     st.session_state["bleu_candidate_input"] = st.session_state["mt_last_nmt"]
 
@@ -404,6 +523,10 @@ if "mt_last_source" not in st.session_state:
     st.session_state["mt_last_source"] = "It rains cats and dogs."
 if "mt_last_nmt" not in st.session_state:
     st.session_state["mt_last_nmt"] = ""
+if "mt_last_llm" not in st.session_state:
+    st.session_state["mt_last_llm"] = ""
+if "mt_last_llm_error" not in st.session_state:
+    st.session_state["mt_last_llm_error"] = ""
 if "bleu_candidate_input" not in st.session_state:
     st.session_state["bleu_candidate_input"] = st.session_state["mt_last_nmt"] or "外面雨下得很大。"
 if "bleu_reference_input" not in st.session_state:
@@ -416,6 +539,12 @@ MT_IDIOM_DEMO_TEXTS = {
     "A": "It rains cats and dogs.",
     "B": "Water under the bridge.",
     "C": "Break a leg!",
+}
+
+MT_PLAIN_DEMO_TEXTS = {
+    "A": "The meeting starts at nine o'clock tomorrow morning.",
+    "B": "She bought a new laptop for her online classes.",
+    "C": "Please turn off the lights before you leave the room.",
 }
 
 
@@ -444,30 +573,55 @@ with tab1:
     st.caption("调用 Hugging Face 上的轻量级英译中模型，体验神经机器翻译对上下文和习语的处理能力。")
     render_guide_card(
         "这一部分演示现代神经机器翻译系统如何直接把英文序列映射成中文序列。",
-        "点击翻译后，页面会显示模型生成的中文结果；适合输入俚语、长句和多义词句子观察模型是否能结合上下文。",
+        "点击翻译后，页面会同时展示轻量 NMT 原始输出、可选的大模型自然意译，以及课堂演示用的参考意译。",
         "像 “It rains cats and dogs.” 或 “Water under the bridge.” 这样的习语特别适合拿来观察模型是不是仍然在逐词翻译。",
     )
 
-    st.caption("也可以直接点击下面三个俚语示例按钮，快速观察模型对英文固定表达的翻译效果。")
-    demo_col1, demo_col2, demo_col3 = st.columns(3)
-    with demo_col1:
+    st.caption("也可以直接点击下面的课堂示例按钮，分别观察 NMT 在英文俚语和普通英文句子上的翻译表现差异。")
+    st.markdown("**俚语示例**")
+    idiom_col1, idiom_col2, idiom_col3 = st.columns(3)
+    with idiom_col1:
         if st.button("俚语示例 A", key="mt_demo_a"):
             try:
                 apply_mt_demo_text(MT_IDIOM_DEMO_TEXTS["A"])
             except Exception as exc:  # pragma: no cover - UI fallback
                 st.error(f"NMT 翻译失败：{exc}")
                 st.stop()
-    with demo_col2:
+    with idiom_col2:
         if st.button("俚语示例 B", key="mt_demo_b"):
             try:
                 apply_mt_demo_text(MT_IDIOM_DEMO_TEXTS["B"])
             except Exception as exc:  # pragma: no cover - UI fallback
                 st.error(f"NMT 翻译失败：{exc}")
                 st.stop()
-    with demo_col3:
+    with idiom_col3:
         if st.button("俚语示例 C", key="mt_demo_c"):
             try:
                 apply_mt_demo_text(MT_IDIOM_DEMO_TEXTS["C"])
+            except Exception as exc:  # pragma: no cover - UI fallback
+                st.error(f"NMT 翻译失败：{exc}")
+                st.stop()
+
+    st.markdown("**普通英文示例**")
+    plain_col1, plain_col2, plain_col3 = st.columns(3)
+    with plain_col1:
+        if st.button("普通示例 A", key="mt_plain_demo_a"):
+            try:
+                apply_mt_demo_text(MT_PLAIN_DEMO_TEXTS["A"])
+            except Exception as exc:  # pragma: no cover - UI fallback
+                st.error(f"NMT 翻译失败：{exc}")
+                st.stop()
+    with plain_col2:
+        if st.button("普通示例 B", key="mt_plain_demo_b"):
+            try:
+                apply_mt_demo_text(MT_PLAIN_DEMO_TEXTS["B"])
+            except Exception as exc:  # pragma: no cover - UI fallback
+                st.error(f"NMT 翻译失败：{exc}")
+                st.stop()
+    with plain_col3:
+        if st.button("普通示例 C", key="mt_plain_demo_c"):
+            try:
+                apply_mt_demo_text(MT_PLAIN_DEMO_TEXTS["C"])
             except Exception as exc:  # pragma: no cover - UI fallback
                 st.error(f"NMT 翻译失败：{exc}")
                 st.stop()
@@ -489,30 +643,37 @@ with tab1:
                     st.error(f"NMT 翻译失败：{exc}")
                     st.stop()
 
+            llm_translation, llm_error = run_llm_translation_if_available(nmt_input)
             st.session_state["mt_last_source"] = nmt_input
             st.session_state["mt_last_nmt"] = translation
+            st.session_state["mt_last_llm"] = llm_translation or ""
+            st.session_state["mt_last_llm_error"] = llm_error or ""
 
-    if uses_demo_idiom_override(st.session_state["mt_last_source"]):
-        raw_col, demo_col = st.columns(2)
-        with raw_col:
-            render_translation_box(
-                "NMT Raw Output",
-                st.session_state["mt_last_nmt"],
-                "点击上方按钮后，这里会显示模型原始生成的中文结果。",
-            )
-        with demo_col:
-            render_translation_box(
-                "Teaching Reference Paraphrase",
-                get_demo_idiom_override(st.session_state["mt_last_source"]),
-                "当命中教学俚语示例时，这里展示更适合课堂讲解的参考意译。",
-            )
-        st.info("左侧是模型原始输出，右侧是教学参考意译。这样既能保留模型真实表现，也方便课堂展示更自然的习语含义。")
-    else:
+    raw_col, llm_col, demo_col = st.columns(3)
+    with raw_col:
         render_translation_box(
-            "NMT Raw Output",
+            "模型原始输出 NMT Raw Output",
             st.session_state["mt_last_nmt"],
             "点击上方按钮后，这里会显示神经机器翻译生成的中文结果。",
         )
+    with llm_col:
+        llm_placeholder = st.session_state["mt_last_llm_error"] or "如果你配置了 OPENAI_API_KEY，这里会显示更自然的大模型意译结果。"
+        render_translation_box(
+            "大模型自然意译 LLM Natural Paraphrase",
+            st.session_state["mt_last_llm"],
+            llm_placeholder,
+        )
+    with demo_col:
+        render_translation_box(
+            "教学参考意译 Teaching Reference Paraphrase",
+            get_demo_reference_override(st.session_state["mt_last_source"]),
+            "当前句子没有预设教学参考意译；若是课堂示例句子，这里会展示更适合讲解的参考表达。",
+        )
+
+    if uses_demo_reference_override(st.session_state["mt_last_source"]):
+        st.info("左侧是轻量 NMT 的原始输出，中间是可选的大模型自然意译，右侧是课堂展示用的教学参考意译。")
+    else:
+        st.info("左侧保留模型真实输出，中间栏在配置 OPENAI_API_KEY 后可显示更自然的大模型意译；当前句子没有预设教学参考意译。")
     st.markdown("</div>", unsafe_allow_html=True)
 
 
