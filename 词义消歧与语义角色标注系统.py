@@ -5,7 +5,6 @@ import sys
 import os
 from sklearn.metrics.pairwise import cosine_similarity
 import pandas as pd
-from pathlib import Path
 from ui_theme import inject_iekg_theme, render_guide_card, render_hero
 from deploy_utils import get_nltk_data_dir
 
@@ -26,16 +25,16 @@ except ImportError:
 
 # 尝试导入 transformers 相关库
 HAS_TRANSFORMERS = False
+TRANSFORMERS_IMPORT_ERROR = ""
 try:
-    from transformers import AutoModel, AutoTokenizer
     import torch
+    from transformers import AutoModel, AutoTokenizer
     HAS_TRANSFORMERS = True
-except ImportError:
-    st.warning('未安装 transformers 和 torch 库，词义消歧模块的 BERT 功能将不可用。')
-    st.info('可以通过运行: pip install --user transformers torch 来安装这些库。')
-
-# 确保 nltk 资源已下载
-import os
+except Exception as exc:
+    TRANSFORMERS_IMPORT_ERROR = str(exc)
+    st.warning('transformers / torch 依赖未正确加载，词义消歧模块的 BERT 功能将不可用。')
+    st.info('如果这是部署环境，请确认 requirements.txt 中包含 transformers 和 torch，并查看 Cloud logs。')
+    st.caption(f'具体导入错误：{TRANSFORMERS_IMPORT_ERROR}')
 
 def download_nltk_resources():
     try:
@@ -44,18 +43,26 @@ def download_nltk_resources():
         nltk_data_dir.mkdir(parents=True, exist_ok=True)
         
         # 添加自定义数据目录到 NLTK 路径
-        nltk_data.path.append(str(nltk_data_dir))
+        if str(nltk_data_dir) not in nltk.data.path:
+            nltk.data.path.append(str(nltk_data_dir))
         
-        # 下载必要的 nltk 资源（静默模式）
-        nltk.download('punkt', download_dir=str(nltk_data_dir), quiet=True)
-        nltk.download('wordnet', download_dir=str(nltk_data_dir), quiet=True)
-        nltk.download('omw-1.4', download_dir=str(nltk_data_dir), quiet=True)
+        # 仅在资源缺失时下载，减少云端冷启动时间
+        resources = {
+            'punkt': 'tokenizers/punkt',
+            'wordnet': 'corpora/wordnet',
+            'omw-1.4': 'corpora/omw-1.4',
+        }
+        for package_name, resource_path in resources.items():
+            try:
+                nltk.data.find(resource_path)
+            except LookupError:
+                nltk.download(package_name, download_dir=str(nltk_data_dir), quiet=True)
         
         return True
     except Exception as e:
         st.error(f'下载 NLTK 资源时出错: {e}')
-        st.info('请尝试以管理员身份运行应用，或者手动下载 NLTK 资源')
-        st.info('也可以尝试在命令行中运行: python -m nltk.downloader wordnet')
+        st.info('部署环境一般不需要管理员权限，请优先检查缓存目录是否可写以及网络是否正常。')
+        st.info('如果本地手动处理，可以运行: python -m nltk.downloader punkt wordnet omw-1.4')
         return False
 
 download_nltk_resources()
