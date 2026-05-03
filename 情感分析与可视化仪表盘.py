@@ -75,13 +75,13 @@ inject_iekg_theme(
         box-shadow: 0 24px 50px rgba(15, 23, 42, 0.2);
     }
     .dashboard-title {
-        color: #e2e8f0;
+        color: #0f172a;
         font-size: 1.25rem;
         font-weight: 700;
         margin-bottom: 0.9rem;
     }
     .dashboard-caption {
-        color: rgba(226, 232, 240, 0.78);
+        color: #334155;
         margin-bottom: 1rem;
         line-height: 1.7;
     }
@@ -112,22 +112,22 @@ inject_iekg_theme(
         background: linear-gradient(145deg, #b91c1c, #ef4444);
     }
     .batch-card {
-        background: rgba(255, 255, 255, 0.06);
-        border: 1px solid rgba(148, 163, 184, 0.16);
+        background: rgba(255, 255, 255, 0.92);
+        border: 1px solid rgba(148, 163, 184, 0.18);
         border-radius: 20px;
         padding: 0.9rem;
-        color: #e2e8f0;
+        color: #334155;
     }
     .batch-item {
         padding: 0.65rem 0;
-        border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+        border-bottom: 1px solid rgba(148, 163, 184, 0.16);
     }
     .batch-item:last-child {
         border-bottom: 0;
         padding-bottom: 0;
     }
     .batch-item strong {
-        color: #f8fafc;
+        color: #0f172a;
     }
     @media (max-width: 900px) {
         .stats-row {
@@ -302,6 +302,13 @@ def render_sentiment_result(title: str, result: dict[str, Any] | None, placehold
     )
 
 
+def apply_single_text_demo(text: str) -> None:
+    """载入示例文本，并立即刷新模块 1 的分析结果。"""
+
+    st.session_state["sentiment_single_text"] = text
+    st.session_state["sentiment_single_result"] = analyze_sentiment(text)
+
+
 def generate_mock_reviews() -> list[str]:
     return [
         "物流特别快，昨天下单今天一早就送到了，包装也很完整。",
@@ -317,6 +324,13 @@ def generate_mock_reviews() -> list[str]:
         "声音非常清楚，开会收音效果比预期好。",
         "说明书写得太简单，第一次安装花了很久。",
     ]
+
+
+SENTIMENT_DEMO_TEXTS = {
+    "A": "这款产品真的很惊喜，外观精致，运行流畅，续航也比预期更稳定。",
+    "B": "整体体验中规中矩，功能基本够用，没有明显短板，但也没有特别突出的地方。",
+    "C": "用了两天就开始卡顿，发热严重，电池掉得很快，整体体验让人失望。",
+}
 
 
 if "sentiment_single_text" not in st.session_state:
@@ -361,6 +375,30 @@ with tab1:
         "输入明显的好评、差评或模棱两可的评论，看看分类标签和仪表盘指针会如何变化。",
         "这里使用多语言轻量模型，并把细粒度标签聚合成 Positive / Neutral / Negative 三类，更适合课堂演示。",
     )
+
+    st.caption("也可以直接点击下面三个示例按钮，快速查看不同情绪风格文本的分析结果。")
+    demo_col1, demo_col2, demo_col3 = st.columns(3)
+    with demo_col1:
+        if st.button("示例文本 A", key="single_demo_a"):
+            try:
+                apply_single_text_demo(SENTIMENT_DEMO_TEXTS["A"])
+            except Exception as exc:  # pragma: no cover - UI fallback
+                st.error(f"示例分析失败：{exc}")
+                st.stop()
+    with demo_col2:
+        if st.button("示例文本 B", key="single_demo_b"):
+            try:
+                apply_single_text_demo(SENTIMENT_DEMO_TEXTS["B"])
+            except Exception as exc:  # pragma: no cover - UI fallback
+                st.error(f"示例分析失败：{exc}")
+                st.stop()
+    with demo_col3:
+        if st.button("示例文本 C", key="single_demo_c"):
+            try:
+                apply_single_text_demo(SENTIMENT_DEMO_TEXTS["C"])
+            except Exception as exc:  # pragma: no cover - UI fallback
+                st.error(f"示例分析失败：{exc}")
+                st.stop()
 
     single_text = st.text_area(
         "输入一段中文商品评论",
@@ -521,7 +559,7 @@ with tab3:
         pie_fig.update_layout(
             paper_bgcolor="rgba(0,0,0,0)",
             plot_bgcolor="rgba(0,0,0,0)",
-            font=dict(color="#e2e8f0"),
+            font=dict(color="#0f172a"),
             margin=dict(l=10, r=10, t=20, b=10),
             height=360,
         )
