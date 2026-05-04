@@ -261,7 +261,16 @@ def ensure_benepar_model() -> bool:
     except Exception:
         st.info("未检测到 `benepar_en3`，正在下载英文成分句法模型。首次运行可能需要几十秒。")
         try:
-            benepar.download(BENEPAR_MODEL_NAME)
+            download_ok = nltk.download(
+                BENEPAR_MODEL_NAME,
+                download_dir=str(NLTK_DATA_DIR),
+                quiet=True,
+                raise_on_error=True,
+            )
+            if not download_ok:
+                raise RuntimeError("NLTK Downloader 未成功返回 benepar_en3 下载结果。")
+            if str(NLTK_DATA_DIR) not in nltk.data.path:
+                nltk.data.path.append(str(NLTK_DATA_DIR))
             benepar.Parser(BENEPAR_MODEL_NAME)
             return True
         except Exception as exc:  # noqa: BLE001
