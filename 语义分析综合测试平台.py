@@ -8,6 +8,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 import gensim
 from gensim.models import Word2Vec, FastText
 import gensim.downloader as api
+from deploy_utils import get_nltk_data_dir
 from ui_theme import inject_iekg_theme, render_guide_card, render_hero
 
 # 设置 matplotlib 中文字体
@@ -17,7 +18,24 @@ plt.rcParams['axes.unicode_minus'] = False  # 用来正常显示负号
 # 确保 nltk 资源已下载
 @st.cache_resource
 def download_nltk_resources():
-    nltk.download('punkt')
+    nltk_data_dir = get_nltk_data_dir()
+    nltk_data_dir.mkdir(parents=True, exist_ok=True)
+
+    if str(nltk_data_dir) not in nltk.data.path:
+        nltk.data.path.append(str(nltk_data_dir))
+
+    resources = {
+        'punkt': 'tokenizers/punkt',
+        'punkt_tab': 'tokenizers/punkt_tab/english',
+        'stopwords': 'corpora/stopwords',
+    }
+
+    for package_name, resource_path in resources.items():
+        try:
+            nltk.data.find(resource_path)
+        except LookupError:
+            nltk.download(package_name, download_dir=str(nltk_data_dir), quiet=True)
+
     return True
 
 download_nltk_resources()
