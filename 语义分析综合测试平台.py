@@ -73,7 +73,25 @@ render_guide_card(
     "输入完成后，各个标签页会围绕同一份文本去做统计语义、词向量训练和句子级表示计算。",
     "如果只想看 GloVe 预训练演示，可以不填文本；其余模块建议输入一段完整英文段落再体验。",
 )
-corpus_input = st.text_area('请输入英文文本语料（约 500-1000 词）：', height=300)
+default_corpus = """
+Natural language processing is changing the way people interact with computers. In a modern classroom, students can explore how words carry meaning, how context changes interpretation, and how statistical patterns reveal hidden structure in text. A short news article may describe a city government meeting, while a scientific report may explain how researchers analyze language data with machine learning tools.
+
+Semantic analysis helps us move beyond counting words. If two sentences use different expressions to describe the same event, a good semantic model should still recognize their similarity. For example, the sentence "The committee approved the plan" is close in meaning to "The proposal was accepted by the committee," even though the surface forms are different. This difference between form and meaning is an important topic in computational linguistics.
+
+Traditional approaches such as TF-IDF and latent semantic analysis focus on distributional statistics. They measure how often words appear in documents and how frequently terms occur together. These methods are simple, interpretable, and useful for keyword extraction, topic exploration, and document comparison. However, they may struggle when synonyms appear in different contexts or when rare words carry important meaning.
+
+Neural word embeddings offer another perspective. Word2Vec learns vector representations by predicting surrounding words, while FastText improves robustness by modeling subword information. Because FastText uses character n-grams, it can often produce reasonable vectors for unseen or misspelled words such as "computeer" or "langauge". In teaching demonstrations, this contrast helps students understand why subword modeling matters.
+
+Sentence representations are also important. When we average word vectors, we can build a simple sentence embedding and estimate similarity between two statements. Although this method is not as powerful as large transformer models, it is intuitive and easy to explain. Students can quickly observe that sentences about education, research, and language technology tend to cluster together in semantic space.
+
+As AI systems become more common, semantic analysis is no longer only a research topic. It supports search engines, recommendation systems, chatbots, machine translation, and document understanding. By experimenting with the same corpus across multiple modules, learners can compare classic statistical models with modern embedding-based approaches and build a clearer intuition about how machines represent meaning.
+""".strip()
+
+corpus_input = st.text_area(
+    '请输入英文文本语料（约 500-1000 词）：',
+    value=default_corpus,
+    height=300,
+)
 
 # 提示信息
 if not corpus_input:
