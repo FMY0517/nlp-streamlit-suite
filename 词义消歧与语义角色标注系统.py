@@ -49,6 +49,7 @@ def download_nltk_resources():
         # 仅在资源缺失时下载，减少云端冷启动时间
         resources = {
             'punkt': 'tokenizers/punkt',
+            'punkt_tab': 'tokenizers/punkt_tab/english',
             'wordnet': 'corpora/wordnet',
             'omw-1.4': 'corpora/omw-1.4',
         }
@@ -62,7 +63,7 @@ def download_nltk_resources():
     except Exception as e:
         st.error(f'下载 NLTK 资源时出错: {e}')
         st.info('部署环境一般不需要管理员权限，请优先检查缓存目录是否可写以及网络是否正常。')
-        st.info('如果本地手动处理，可以运行: python -m nltk.downloader punkt wordnet omw-1.4')
+        st.info('如果本地手动处理，可以运行: python -m nltk.downloader punkt punkt_tab wordnet omw-1.4')
         return False
 
 download_nltk_resources()
