@@ -50,8 +50,7 @@ download_nltk_resources()
 
 
 def apply_text_examples(**updates):
-    for key, value in updates.items():
-        st.session_state[key] = value
+    st.session_state['semantic_pending_updates'] = updates
     st.rerun()
 
 # 设置页面配置
@@ -143,6 +142,10 @@ if 'semantic_fasttext_sentence1' not in st.session_state:
     st.session_state['semantic_fasttext_sentence1'] = ''
 if 'semantic_fasttext_sentence2' not in st.session_state:
     st.session_state['semantic_fasttext_sentence2'] = ''
+pending_updates = st.session_state.pop('semantic_pending_updates', None)
+if pending_updates:
+    for key, value in pending_updates.items():
+        st.session_state[key] = value
 
 # 提示信息
 if not corpus_input:
