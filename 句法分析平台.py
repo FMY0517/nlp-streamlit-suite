@@ -7,7 +7,7 @@ from __future__ import annotations
 # 代码设计目标：
 # - 页面可以直接放进现有的 Streamlit 合集里运行；
 # - 如果本地还没有安装 spaCy / benepar / svgling 等库，尽量自动补齐；
-# - 如果语言模型尚未下载，则在启动时自动下载；
+# - 运行时避免在 Streamlit Cloud 上临时下载大型模型，优先通过 requirements 预装；
 # - 即使个别依赖失败，页面也尽量给出可理解的提示，而不是直接崩溃。
 
 import html
@@ -214,28 +214,35 @@ svgling = ensure_python_package("svgling")
 pd = ensure_python_package("pandas")
 
 
+SPACY_MODEL_NAME = "en_core_web_sm"
+SPACY_MODEL_INSTALL_HINT = (
+    "请把 spaCy 英文模型作为依赖预装，例如在 requirements.txt 中加入：\n"
+    "en-core-web-sm @ "
+    "https://github.com/explosion/spacy-models/releases/download/"
+    "en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl"
+)
+BENEPAR_MODEL_NAME = "benepar_en3"
+BENEPAR_MODEL_INSTALL_HINT = (
+    "当前环境未包含 benepar 英文成分句法模型 `benepar_en3`，"
+    "所以下半部分会暂时回退为提示信息。"
+)
+
+
 def ensure_spacy_model() -> bool:
     """确保 spaCy 英文小模型可用。"""
 
     if spacy is None:
         return False
     try:
-        spacy.load("en_core_web_sm")
+        spacy.load(SPACY_MODEL_NAME)
         return True
     except Exception:
-        st.info("未检测到 `en_core_web_sm`，正在自动下载 spaCy 英文模型。")
-        try:
-            subprocess.run(
-                [sys.executable, "-m", "spacy", "download", "en_core_web_sm"],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-            spacy.load("en_core_web_sm")
-            return True
-        except Exception as exc:  # noqa: BLE001
-            st.error(f"下载 spaCy 模型失败：{exc}")
-            return False
+        st.error(
+            "当前环境未检测到 spaCy 英文模型 `en_core_web_sm`，"
+            "而 Streamlit Cloud 运行时通常不适合再临时下载模型。\n\n"
+            f"{SPACY_MODEL_INSTALL_HINT}"
+        )
+        return False
 
 
 def ensure_benepar_model() -> bool:
@@ -244,17 +251,11 @@ def ensure_benepar_model() -> bool:
     if benepar is None:
         return False
     try:
-        benepar.Parser("benepar_en3")
+        benepar.Parser(BENEPAR_MODEL_NAME)
         return True
     except Exception:
-        st.info("未检测到 `benepar_en3`，正在自动下载成分句法模型。")
-        try:
-            benepar.download("benepar_en3")
-            benepar.Parser("benepar_en3")
-            return True
-        except Exception as exc:  # noqa: BLE001
-            st.error(f"下载 benepar 模型失败：{exc}")
-            return False
+        st.warning(BENEPAR_MODEL_INSTALL_HINT)
+        return False
 
 
 def ensure_nltk_ready() -> bool:
@@ -277,7 +278,7 @@ def load_spacy_pipeline():
 
     if not ensure_spacy_model():
         return None
-    return spacy.load("en_core_web_sm")
+    return spacy.load(SPACY_MODEL_NAME)
 
 
 @st.cache_resource(show_spinner=False)
@@ -286,7 +287,7 @@ def load_benepar_parser():
 
     if not ensure_benepar_model() or not ensure_nltk_ready():
         return None
-    return benepar.Parser("benepar_en3")
+    return benepar.Parser(BENEPAR_MODEL_NAME)
 
 
 def phrase_badge(label: str) -> str:
@@ -581,13 +582,17 @@ sentence = st.text_input(
 
 with st.expander("依赖与模型说明", expanded=False):
     st.code(
-        "pip install streamlit spacy benepar svgling nltk pandas\n"
-        "python -m spacy download en_core_web_sm",
+        "pip install streamlit 'spacy>=3.8,<3.9' benepar svgling nltk pandas\n"
+        "pip install "
+        "https://github.com/explosion/spacy-models/releases/download/"
+        "en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl\n"
+        "python -c \"import benepar; benepar.download('benepar_en3')\"",
         language="bash",
     )
     st.markdown(
-        "页面启动时会尝试自动安装 `spaCy / benepar / svgling / nltk / pandas`，"
-        "并自动下载 `en_core_web_sm` 与 `benepar_en3`。首次运行时间会明显更长。"
+        "为了让 Streamlit Cloud 更稳定，建议把 `en_core_web_sm` 在部署阶段预装到环境里，"
+        "不要依赖页面运行时再下载。`benepar_en3` 如果缺失，页面会保留依存句法分析，"
+        "并对成分句法部分做降级提示。"
     )
 
 

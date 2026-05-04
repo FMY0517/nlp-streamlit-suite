@@ -9,9 +9,21 @@ import streamlit as st
 
 
 APP_CONFIG = {
+    "cn_tokenizer": {
+        "label": "中文分词平台",
+        "file": "中文分词平台.py",
+    },
+    "syntax_parser": {
+        "label": "句法分析平台",
+        "file": "句法分析平台.py",
+    },
     "semantic": {
         "label": "词义消歧与语义角色标注",
         "file": "词义消歧与语义角色标注系统.py",
+    },
+    "semantic_lab": {
+        "label": "语义分析综合测试平台",
+        "file": "语义分析综合测试平台.py",
     },
     "discourse": {
         "label": "篇章分析综合平台",
@@ -29,21 +41,9 @@ APP_CONFIG = {
         "label": "机器翻译机制与质量测评系统",
         "file": "机器翻译机制与质量测评系统.py",
     },
-    "semantic_lab": {
-        "label": "语义分析综合测试平台",
-        "file": "语义分析综合测试平台.py",
-    },
     "sentiment_dashboard": {
         "label": "情感分析与可视化仪表盘",
         "file": "情感分析与可视化仪表盘.py",
-    },
-    "cn_tokenizer": {
-        "label": "中文分词平台",
-        "file": "中文分词平台.py",
-    },
-    "syntax_parser": {
-        "label": "句法分析平台",
-        "file": "句法分析平台.py",
     },
 }
 

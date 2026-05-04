@@ -205,6 +205,24 @@ pip install pkuseg thulac
 
 SPECIAL_SYMBOL_RE = re.compile(r"[^\u4e00-\u9fffA-Za-z0-9，。！？；：、“”‘’（）《》【】,.!?;:()\[\]\-—\s]")
 TOKEN_KEEP_RE = re.compile(r"[\u4e00-\u9fffA-Za-z0-9]")
+FULLWIDTH_PUNCT_MAP = {
+    "。": ".",
+    "，": ",",
+    "！": "!",
+    "？": "?",
+    "：": ":",
+    "；": ";",
+    "（": "(",
+    "）": ")",
+    "【": "[",
+    "】": "]",
+    "《": "<",
+    "》": ">",
+    "“": '"',
+    "”": '"',
+    "‘": "'",
+    "’": "'",
+}
 POS_PALETTE = [
     "#0f766e",
     "#2563eb",
@@ -221,7 +239,9 @@ POS_LABELS = {
     "n": "名词",
     "nr": "人名",
     "ns": "地名",
+    "t": "时间词",
     "nt": "机构名",
+    "nrt": "音译人名",
     "nz": "其他专名",
     "v": "动词",
     "vd": "副动词",
@@ -241,6 +261,7 @@ POS_LABELS = {
     "e": "叹词",
     "o": "拟声词",
     "x": "非语素字",
+    "zg": "状态词语素",
     "w": "标点",
 }
 
@@ -310,6 +331,9 @@ def remove_special_symbols(text: str) -> str:
 def fullwidth_to_halfwidth(text: str) -> str:
     normalized_chars: list[str] = []
     for char in text:
+        if char in FULLWIDTH_PUNCT_MAP:
+            normalized_chars.append(FULLWIDTH_PUNCT_MAP[char])
+            continue
         code = ord(char)
         if code == 12288:
             normalized_chars.append(" ")
@@ -449,36 +473,32 @@ def render_pos_tags(tagged_tokens: list[tuple[str, str]]) -> None:
     for word, tag in tagged_tokens:
         color = color_mapping[tag]
         token_html.append(
-            f"""
-            <div class="pos-token">
-                <span class="pos-badge" style="background:{color};">{html.escape(tag)}</span>
-                <div class="pos-word">{html.escape(word)}</div>
-            </div>
-            """
+            (
+                f'<div class="pos-token">'
+                f'<span class="pos-badge" style="background:{color};">{html.escape(tag)}</span>'
+                f'<div class="pos-word">{html.escape(word)}</div>'
+                f"</div>"
+            )
         )
         if tag not in seen_tags:
             seen_tags.add(tag)
             legend_html.append(
-                f"""
-                <span class="legend-chip">
-                    <span class="legend-dot" style="background:{color};"></span>
-                    {html.escape(tag)} / {html.escape(POS_LABELS.get(tag, '词性'))}
-                </span>
-                """
+                (
+                    f'<span class="legend-chip">'
+                    f'<span class="legend-dot" style="background:{color};"></span>'
+                    f"{html.escape(tag)} / {html.escape(POS_LABELS.get(tag, '词性'))}"
+                    f"</span>"
+                )
             )
 
     st.markdown(
-        f"""
-        <div class="token-card">
-            <h4>词性标注结果</h4>
-            <div class="pos-wrap">
-                {''.join(token_html)}
-            </div>
-            <div class="legend-row">
-                {''.join(legend_html)}
-            </div>
-        </div>
-        """,
+        (
+            '<div class="token-card">'
+            "<h4>词性标注结果</h4>"
+            f'<div class="pos-wrap">{"".join(token_html)}</div>'
+            f'<div class="legend-row">{"".join(legend_html)}</div>'
+            "</div>"
+        ),
         unsafe_allow_html=True,
     )
 
