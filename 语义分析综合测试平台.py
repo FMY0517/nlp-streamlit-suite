@@ -2,17 +2,25 @@ import streamlit as st
 import nltk
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib import font_manager
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.decomposition import TruncatedSVD
 from sklearn.metrics.pairwise import cosine_similarity
 import gensim
 from gensim.models import Word2Vec, FastText
 import gensim.downloader as api
-from deploy_utils import get_nltk_data_dir
+from deploy_utils import find_available_chinese_font, get_nltk_data_dir
 from ui_theme import inject_iekg_theme, render_guide_card, render_hero
 
 # 设置 matplotlib 中文字体
-plt.rcParams['font.sans-serif'] = ['SimHei']  # 用来正常显示中文标签
+CHINESE_FONT_PROP = None
+chinese_font_path = find_available_chinese_font()
+if chinese_font_path:
+    font_manager.fontManager.addfont(chinese_font_path)
+    CHINESE_FONT_PROP = font_manager.FontProperties(fname=chinese_font_path)
+    plt.rcParams['font.sans-serif'] = [CHINESE_FONT_PROP.get_name(), 'DejaVu Sans']
+else:
+    plt.rcParams['font.sans-serif'] = ['DejaVu Sans']
 plt.rcParams['axes.unicode_minus'] = False  # 用来正常显示负号
 
 # 确保 nltk 资源已下载
@@ -39,6 +47,12 @@ def download_nltk_resources():
     return True
 
 download_nltk_resources()
+
+
+def apply_text_examples(**updates):
+    for key, value in updates.items():
+        st.session_state[key] = value
+    st.rerun()
 
 # 设置页面配置
 st.set_page_config(
@@ -110,6 +124,25 @@ corpus_input = st.text_area(
     value=default_corpus,
     height=300,
 )
+
+if 'semantic_w2v_word_input' not in st.session_state:
+    st.session_state['semantic_w2v_word_input'] = ''
+if 'semantic_glove_word_a' not in st.session_state:
+    st.session_state['semantic_glove_word_a'] = ''
+if 'semantic_glove_word_b' not in st.session_state:
+    st.session_state['semantic_glove_word_b'] = ''
+if 'semantic_glove_word_c' not in st.session_state:
+    st.session_state['semantic_glove_word_c'] = ''
+if 'semantic_glove_word1' not in st.session_state:
+    st.session_state['semantic_glove_word1'] = ''
+if 'semantic_glove_word2' not in st.session_state:
+    st.session_state['semantic_glove_word2'] = ''
+if 'semantic_fasttext_oov_word' not in st.session_state:
+    st.session_state['semantic_fasttext_oov_word'] = ''
+if 'semantic_fasttext_sentence1' not in st.session_state:
+    st.session_state['semantic_fasttext_sentence1'] = ''
+if 'semantic_fasttext_sentence2' not in st.session_state:
+    st.session_state['semantic_fasttext_sentence2'] = ''
 
 # 提示信息
 if not corpus_input:
@@ -320,7 +353,10 @@ with tab1:
         
         ax.set_xlabel('Component 1')
         ax.set_ylabel('Component 2')
-        ax.set_title('LSA 词汇降维可视化（过滤共现次数<2）')
+        if CHINESE_FONT_PROP is not None:
+            ax.set_title('LSA 词汇降维可视化（过滤共现次数<2）', fontproperties=CHINESE_FONT_PROP)
+        else:
+            ax.set_title('LSA Word Projection (co-occurrence >= 2)')
         st.markdown("<div class='plot-card'>", unsafe_allow_html=True)
         st.pyplot(fig)
         st.markdown("</div>", unsafe_allow_html=True)
@@ -377,7 +413,20 @@ with tab2:
         model = Word2Vec(sentences=tokenized_sentences, vector_size=vector_size, window=window, sg=sg, min_count=1)
         
         # 单词输入框
-        word_input = st.text_input('输入一个单词，查找最相似的词汇：')
+        word_input = st.text_input(
+            '输入一个单词，查找最相似的词汇：',
+            key='semantic_w2v_word_input',
+        )
+        example_col1, example_col2, example_col3 = st.columns(3)
+        with example_col1:
+            if st.button('示例词：language', key='semantic_w2v_example_language'):
+                apply_text_examples(semantic_w2v_word_input='language')
+        with example_col2:
+            if st.button('示例词：semantic', key='semantic_w2v_example_semantic'):
+                apply_text_examples(semantic_w2v_word_input='semantic')
+        with example_col3:
+            if st.button('示例词：model', key='semantic_w2v_example_model'):
+                apply_text_examples(semantic_w2v_word_input='model')
         
         if word_input:
             try:
@@ -437,11 +486,26 @@ with tab3:
         st.subheader('词类比计算器')
         col1, col2, col3 = st.columns(3)
         with col1:
-            word_a = st.text_input('单词 A')
+            word_a = st.text_input('单词 A', key='semantic_glove_word_a')
         with col2:
-            word_b = st.text_input('单词 B')
+            word_b = st.text_input('单词 B', key='semantic_glove_word_b')
         with col3:
-            word_c = st.text_input('单词 C')
+            word_c = st.text_input('单词 C', key='semantic_glove_word_c')
+        analogy_col1, analogy_col2 = st.columns(2)
+        with analogy_col1:
+            if st.button('示例：man→king, woman→?', key='semantic_glove_analogy_example_1'):
+                apply_text_examples(
+                    semantic_glove_word_a='man',
+                    semantic_glove_word_b='king',
+                    semantic_glove_word_c='woman',
+                )
+        with analogy_col2:
+            if st.button('示例：france→paris, italy→?', key='semantic_glove_analogy_example_2'):
+                apply_text_examples(
+                    semantic_glove_word_a='france',
+                    semantic_glove_word_b='paris',
+                    semantic_glove_word_c='italy',
+                )
         
         if word_a and word_b and word_c:
             try:
@@ -454,9 +518,22 @@ with tab3:
         st.subheader('单词相似度计算')
         col4, col5 = st.columns(2)
         with col4:
-            word1 = st.text_input('单词 1')
+            word1 = st.text_input('单词 1', key='semantic_glove_word1')
         with col5:
-            word2 = st.text_input('单词 2')
+            word2 = st.text_input('单词 2', key='semantic_glove_word2')
+        similarity_col1, similarity_col2 = st.columns(2)
+        with similarity_col1:
+            if st.button('示例：computer / language', key='semantic_glove_similarity_example_1'):
+                apply_text_examples(
+                    semantic_glove_word1='computer',
+                    semantic_glove_word2='language',
+                )
+        with similarity_col2:
+            if st.button('示例：education / research', key='semantic_glove_similarity_example_2'):
+                apply_text_examples(
+                    semantic_glove_word1='education',
+                    semantic_glove_word2='research',
+                )
         
         if word1 and word2:
             try:
@@ -514,7 +591,20 @@ with tab4:
         
         # OOV 测试
         st.subheader('OOV 测试（拼写错误的单词）')
-        oov_word = st.text_input('输入一个拼写错误的单词（如 "computeer"）：')
+        oov_word = st.text_input(
+            '输入一个拼写错误的单词（如 "computeer"）：',
+            key='semantic_fasttext_oov_word',
+        )
+        oov_col1, oov_col2, oov_col3 = st.columns(3)
+        with oov_col1:
+            if st.button('示例词：computeer', key='semantic_fasttext_oov_example_1'):
+                apply_text_examples(semantic_fasttext_oov_word='computeer')
+        with oov_col2:
+            if st.button('示例词：langauge', key='semantic_fasttext_oov_example_2'):
+                apply_text_examples(semantic_fasttext_oov_word='langauge')
+        with oov_col3:
+            if st.button('示例词：translaton', key='semantic_fasttext_oov_example_3'):
+                apply_text_examples(semantic_fasttext_oov_word='translaton')
         
         if oov_word:
             st.write('Word2Vec 结果：')
@@ -535,8 +625,21 @@ with tab4:
         
         # Sent2Vec 简单实现
         st.subheader('Sent2Vec 句子相似度')
-        sentence1 = st.text_input('句子 1')
-        sentence2 = st.text_input('句子 2')
+        sentence1 = st.text_input('句子 1', key='semantic_fasttext_sentence1')
+        sentence2 = st.text_input('句子 2', key='semantic_fasttext_sentence2')
+        sent_col1, sent_col2 = st.columns(2)
+        with sent_col1:
+            if st.button('示例：教育/研究主题', key='semantic_fasttext_sentence_example_1'):
+                apply_text_examples(
+                    semantic_fasttext_sentence1='Students use language technology in the classroom.',
+                    semantic_fasttext_sentence2='Researchers apply NLP tools to educational tasks.',
+                )
+        with sent_col2:
+            if st.button('示例：产品/翻译主题', key='semantic_fasttext_sentence_example_2'):
+                apply_text_examples(
+                    semantic_fasttext_sentence1='The chatbot translates customer questions quickly.',
+                    semantic_fasttext_sentence2='The translation system answers user requests in real time.',
+                )
         
         if sentence1 and sentence2:
             # 分词
