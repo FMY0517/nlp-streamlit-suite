@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import html
 import importlib
+import os
 import subprocess
 import sys
 from typing import Any
@@ -19,6 +20,7 @@ from typing import Any
 import streamlit as st
 import streamlit.components.v1 as components
 
+from deploy_utils import ensure_named_cache_dir, get_nltk_data_dir
 from ui_theme import inject_iekg_theme, render_guide_card, render_hero
 
 
@@ -222,10 +224,11 @@ SPACY_MODEL_INSTALL_HINT = (
     "en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl"
 )
 BENEPAR_MODEL_NAME = "benepar_en3"
-BENEPAR_MODEL_INSTALL_HINT = (
-    "当前环境未包含 benepar 英文成分句法模型 `benepar_en3`，"
-    "所以下半部分会暂时回退为提示信息。"
-)
+HF_CACHE_DIR = ensure_named_cache_dir("hf_cache_syntax")
+NLTK_DATA_DIR = get_nltk_data_dir()
+os.environ.setdefault("HF_HOME", str(HF_CACHE_DIR))
+os.environ.setdefault("TRANSFORMERS_CACHE", str(HF_CACHE_DIR))
+os.environ.setdefault("NLTK_DATA", str(NLTK_DATA_DIR))
 
 
 def ensure_spacy_model() -> bool:
@@ -250,12 +253,24 @@ def ensure_benepar_model() -> bool:
 
     if benepar is None:
         return False
+    if nltk is not None and str(NLTK_DATA_DIR) not in nltk.data.path:
+        nltk.data.path.append(str(NLTK_DATA_DIR))
     try:
         benepar.Parser(BENEPAR_MODEL_NAME)
         return True
     except Exception:
-        st.warning(BENEPAR_MODEL_INSTALL_HINT)
-        return False
+        st.info("未检测到 `benepar_en3`，正在下载英文成分句法模型。首次运行可能需要几十秒。")
+        try:
+            benepar.download(BENEPAR_MODEL_NAME)
+            benepar.Parser(BENEPAR_MODEL_NAME)
+            return True
+        except Exception as exc:  # noqa: BLE001
+            st.warning(
+                "当前环境未能成功下载 benepar 英文成分句法模型 `benepar_en3`，"
+                "所以下半部分会暂时回退为提示信息。\n\n"
+                f"下载失败原因：{exc}"
+            )
+            return False
 
 
 def ensure_nltk_ready() -> bool:
@@ -591,8 +606,8 @@ with st.expander("依赖与模型说明", expanded=False):
     )
     st.markdown(
         "为了让 Streamlit Cloud 更稳定，建议把 `en_core_web_sm` 在部署阶段预装到环境里，"
-        "不要依赖页面运行时再下载。`benepar_en3` 如果缺失，页面会保留依存句法分析，"
-        "并对成分句法部分做降级提示。"
+        "不要依赖页面运行时再下载。`benepar_en3` 如果缺失，页面会尝试自动下载到可写缓存目录；"
+        "若下载失败，页面仍会保留依存句法分析，并对成分句法部分做降级提示。"
     )
 
 
