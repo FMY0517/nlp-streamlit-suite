@@ -269,8 +269,33 @@ def load_spacy_model() -> tuple[Any | None, str | None]:
             return None, f"spaCy 模型下载后仍无法加载：{exc}"
 
 
-def install_fastcoref_ui() -> None:
-    st.warning("当前环境还没有安装 fastcoref，第三个标签页需要它来做现代指代消解。")
+def patch_fastcoref_model_class(model_class: Any) -> None:
+    if not hasattr(model_class, "all_tied_weights_keys"):
+        model_class.all_tied_weights_keys = []
+    if not hasattr(model_class, "_tied_weights_keys"):
+        model_class._tied_weights_keys = []
+
+
+def ensure_fastcoref_transformers_compat() -> None:
+    compatibility_targets = (
+        ("fastcoref.coref_models.modeling_fcoref", "FCorefModel"),
+        ("fastcoref.coref_models.modeling_lingmess", "LingMessModel"),
+    )
+    for module_name, class_name in compatibility_targets:
+        try:
+            module = __import__(module_name, fromlist=[class_name])
+            model_class = getattr(module, class_name, None)
+            if model_class is not None:
+                patch_fastcoref_model_class(model_class)
+        except Exception:
+            continue
+
+
+def install_fastcoref_ui(installed: bool = False) -> None:
+    if installed:
+        st.warning("当前环境里的 fastcoref 已安装，但暂时没有成功加载；可以尝试重新安装或稍后重试。")
+    else:
+        st.warning("当前环境还没有安装 fastcoref，第三个标签页需要它来做现代指代消解。")
     col1, col2 = st.columns([1, 1.4])
     with col1:
         if st.button("尝试自动安装 fastcoref", key="install_fastcoref"):
@@ -295,6 +320,7 @@ def load_fastcoref_model() -> tuple[Any | None, str | None]:
         return None, "missing_package"
 
     try:
+        ensure_fastcoref_transformers_compat()
         model = st.session_state.get("_fastcoref_model")
         if model is not None:
             return model, None
@@ -754,8 +780,11 @@ with tab3:
                 install_fastcoref_ui()
             else:
                 st.error(f"fastcoref 加载失败：{error_message}")
-                st.caption("这通常意味着模型权重下载失败，或者本机缺少相关深度学习依赖。")
-                install_fastcoref_ui()
+                if "all_tied_weights_keys" in error_message:
+                    st.caption("这属于 fastcoref 与当前 transformers 版本的兼容问题；页面已经尝试自动补丁，但本次加载仍未成功。")
+                else:
+                    st.caption("这通常意味着模型权重下载失败，或者本机缺少相关深度学习依赖。")
+                install_fastcoref_ui(installed=True)
         else:
             with st.spinner("正在运行 fastcoref，首次加载模型会稍慢一些..."):
                 try:
