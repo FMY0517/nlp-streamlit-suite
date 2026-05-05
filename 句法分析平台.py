@@ -307,6 +307,26 @@ def ensure_benepar_model() -> bool:
                 return False
 
 
+def ensure_transformers_t5_compat() -> None:
+    """为较新的 transformers 版本补回 benepar 依赖的旧 T5Tokenizer 接口。"""
+
+    try:
+        from transformers import T5Tokenizer
+    except Exception:
+        return
+
+    if hasattr(T5Tokenizer, "build_inputs_with_special_tokens"):
+        return
+
+    def _build_inputs_with_special_tokens(self, token_ids_0, token_ids_1=None):
+        eos = [self.eos_token_id] if self.eos_token_id is not None else []
+        if token_ids_1 is None:
+            return list(token_ids_0) + eos
+        return list(token_ids_0) + eos + list(token_ids_1) + eos
+
+    T5Tokenizer.build_inputs_with_special_tokens = _build_inputs_with_special_tokens
+
+
 def ensure_nltk_ready() -> bool:
     """确保 NLTK 中的基础组件可用。"""
 
@@ -334,6 +354,7 @@ def load_spacy_pipeline():
 def load_benepar_parser():
     """加载 benepar 解析器，并缓存。"""
 
+    ensure_transformers_t5_compat()
     if not ensure_benepar_model() or not ensure_nltk_ready():
         return None
     return benepar.Parser(BENEPAR_MODEL_NAME)
