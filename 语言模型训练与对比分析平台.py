@@ -37,11 +37,11 @@ def suppress_torchvision_for_transformers():
         importlib.util.find_spec = previous_find_spec
 
 
-def get_pipeline_import():
+def get_transformers_generation_imports():
     with suppress_torchvision_for_transformers():
-        from transformers import pipeline as hf_pipeline
+        from transformers import AutoModelForCausalLM, AutoModelForMaskedLM, AutoTokenizer
 
-    return hf_pipeline
+    return AutoModelForCausalLM, AutoModelForMaskedLM, AutoTokenizer
 
 
 def get_gpt2_resources_import():
@@ -236,15 +236,23 @@ def generate_text(
 
 
 @st.cache_resource(show_spinner=False)
-def load_masked_lm_pipeline():
-    hf_pipeline = get_pipeline_import()
-    return hf_pipeline("fill-mask", model="bert-base-uncased")
+def load_masked_lm_resources():
+    _, AutoModelForMaskedLM, AutoTokenizer = get_transformers_generation_imports()
+    tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
+    model = AutoModelForMaskedLM.from_pretrained("bert-base-uncased")
+    model.eval()
+    return tokenizer, model
 
 
 @st.cache_resource(show_spinner=False)
-def load_text_generation_pipeline():
-    hf_pipeline = get_pipeline_import()
-    return hf_pipeline("text-generation", model="gpt2")
+def load_text_generation_resources():
+    AutoModelForCausalLM, _, AutoTokenizer = get_transformers_generation_imports()
+    tokenizer = AutoTokenizer.from_pretrained("gpt2")
+    model = AutoModelForCausalLM.from_pretrained("gpt2")
+    model.eval()
+    if tokenizer.pad_token_id is None and tokenizer.eos_token is not None:
+        tokenizer.pad_token = tokenizer.eos_token
+    return tokenizer, model
 
 
 @st.cache_resource(show_spinner=False)
@@ -276,6 +284,55 @@ def compute_perplexity(sentences: Sequence[str]) -> pd.DataFrame:
             }
         )
     return pd.DataFrame(rows)
+
+
+def run_masked_lm_predictions(text: str, top_k: int = 5) -> List[Dict[str, object]]:
+    tokenizer, model = load_masked_lm_resources()
+    inputs = tokenizer(text, return_tensors="pt")
+    mask_positions = (inputs["input_ids"] == tokenizer.mask_token_id).nonzero(as_tuple=False)
+    if len(mask_positions) == 0:
+        raise ValueError("请输入包含 [MASK] 标记的句子。")
+
+    mask_index = int(mask_positions[0, 1].item())
+    with torch.no_grad():
+        logits = model(**inputs).logits
+
+    mask_logits = logits[0, mask_index]
+    probs = torch.softmax(mask_logits, dim=-1)
+    top_values, top_indices = torch.topk(probs, k=top_k)
+
+    results: List[Dict[str, object]] = []
+    for score, token_id in zip(top_values.tolist(), top_indices.tolist()):
+        token_str = tokenizer.decode([token_id]).strip()
+        completed_sentence = text.replace(tokenizer.mask_token, token_str, 1)
+        results.append(
+            {
+                "token_str": token_str,
+                "score": float(score),
+                "sequence": completed_sentence,
+            }
+        )
+    return results
+
+
+def generate_with_gpt2(
+    prompt: str,
+    max_new_tokens: int = 20,
+    temperature: float = 0.9,
+    top_k: int = 50,
+) -> str:
+    tokenizer, model = load_text_generation_resources()
+    inputs = tokenizer(prompt, return_tensors="pt")
+    with torch.no_grad():
+        output_ids = model.generate(
+            **inputs,
+            max_new_tokens=max_new_tokens,
+            do_sample=True,
+            temperature=temperature,
+            top_k=top_k,
+            pad_token_id=tokenizer.pad_token_id,
+        )
+    return tokenizer.decode(output_ids[0], skip_special_tokens=True)
 
 
 render_hero(
@@ -493,8 +550,7 @@ with tab3:
                 st.error("请输入包含 [MASK] 标记的句子。")
             else:
                 with st.spinner("加载并运行 bert-base-uncased..."):
-                    mask_filler = load_masked_lm_pipeline()
-                    results = mask_filler(bert_input, top_k=5)
+                    results = run_masked_lm_predictions(bert_input, top_k=5)
                 bert_df = pd.DataFrame(
                     [
                         {
@@ -516,18 +572,15 @@ with tab3:
         )
         if st.button("运行 GPT-2 续写"):
             with st.spinner("加载并运行 gpt2..."):
-                generator = load_text_generation_pipeline()
-                generated = generator(
+                generated_text = generate_with_gpt2(
                     gpt_prompt,
                     max_new_tokens=20,
-                    do_sample=True,
                     temperature=0.9,
                     top_k=50,
-                    pad_token_id=50256,
                 )
             st.text_area(
                 "GPT-2 生成结果",
-                value=generated[0]["generated_text"],
+                value=generated_text,
                 height=220,
             )
     st.markdown("</div>", unsafe_allow_html=True)
