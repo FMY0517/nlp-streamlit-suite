@@ -271,9 +271,9 @@ def load_spacy_model() -> tuple[Any | None, str | None]:
 
 def patch_fastcoref_model_class(model_class: Any) -> None:
     if not hasattr(model_class, "all_tied_weights_keys"):
-        model_class.all_tied_weights_keys = []
+        model_class.all_tied_weights_keys = {}
     if not hasattr(model_class, "_tied_weights_keys"):
-        model_class._tied_weights_keys = []
+        model_class._tied_weights_keys = {}
 
 
 def ensure_fastcoref_transformers_compat() -> None:
@@ -780,7 +780,7 @@ with tab3:
                 install_fastcoref_ui()
             else:
                 st.error(f"fastcoref 加载失败：{error_message}")
-                if "all_tied_weights_keys" in error_message:
+                if "all_tied_weights_keys" in error_message or "'list' object has no attribute 'keys'" in error_message:
                     st.caption("这属于 fastcoref 与当前 transformers 版本的兼容问题；页面已经尝试自动补丁，但本次加载仍未成功。")
                 else:
                     st.caption("这通常意味着模型权重下载失败，或者本机缺少相关深度学习依赖。")
