@@ -261,14 +261,14 @@ def ensure_benepar_model() -> bool:
     except Exception:
         st.info("未检测到 `benepar_en3`，正在下载英文成分句法模型。首次运行可能需要几十秒。")
         try:
-            download_ok = nltk.download(
+            download_ok = benepar.download(
                 BENEPAR_MODEL_NAME,
                 download_dir=str(NLTK_DATA_DIR),
                 quiet=True,
                 raise_on_error=True,
             )
             if not download_ok:
-                raise RuntimeError("NLTK Downloader 未成功返回 benepar_en3 下载结果。")
+                raise RuntimeError("benepar 官方下载器未成功返回 benepar_en3 下载结果。")
             if str(NLTK_DATA_DIR) not in nltk.data.path:
                 nltk.data.path.append(str(NLTK_DATA_DIR))
             benepar.Parser(BENEPAR_MODEL_NAME)
@@ -665,7 +665,7 @@ with st.expander("依赖与模型说明", expanded=False):
     )
     st.markdown(
         "为了让 Streamlit Cloud 更稳定，建议把 `en_core_web_sm` 在部署阶段预装到环境里，"
-        "不要依赖页面运行时再下载。`benepar_en3` 如果缺失，页面会尝试自动下载到可写缓存目录；"
+        "不要依赖页面运行时再下载。`benepar_en3` 如果缺失，页面会通过 benepar 官方模型索引自动下载到可写缓存目录；"
         "若下载失败，页面仍会保留依存句法分析，并对成分句法部分做降级提示。"
     )
 
