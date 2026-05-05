@@ -51,6 +51,50 @@ inject_iekg_theme(
         font-size: 0.92rem;
         margin-bottom: 0.8rem;
     }
+    .boundary-shell {
+        background: rgba(255,255,255,0.94);
+        border: 1px solid rgba(148, 163, 184, 0.24);
+        border-radius: 16px;
+        padding: 0.9rem 1rem;
+        margin-bottom: 0.8rem;
+    }
+    .boundary-flow {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.45rem 0.4rem;
+        line-height: 1.8;
+    }
+    .boundary-token {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        padding: 0.15rem 0.42rem;
+        border-radius: 0.55rem;
+        background: #f8fafc;
+        color: #0f172a;
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        font-size: 0.96rem;
+    }
+    .boundary-token.predicted {
+        background: #fff7ed;
+        border-color: rgba(234, 88, 12, 0.24);
+        color: #9a3412;
+        font-weight: 700;
+    }
+    .boundary-token.gold {
+        background: #f0fdf4;
+        border-color: rgba(15, 118, 110, 0.22);
+        color: #166534;
+        font-weight: 700;
+    }
+    .boundary-badge {
+        display: inline-block;
+        border-radius: 999px;
+        padding: 0.08rem 0.35rem;
+        font-size: 0.7rem;
+        font-weight: 700;
+        background: rgba(255,255,255,0.72);
+    }
     .arg-box {
         border-radius: 14px;
         padding: 0.85rem 1rem;
@@ -142,6 +186,7 @@ COREF_COLORS = [
     "#ddd6fe",
     "#fecaca",
 ]
+BOUNDARY_TOKEN_RE = re.compile(r"\w+(?:[-']\w+)*|[^\w\s]")
 
 
 def normalize_spaces(text: str) -> str:
@@ -357,6 +402,46 @@ def render_segment_list(title: str, segments: list[str], css_class: str, caption
         )
 
 
+def tokenize_boundary_view(text: str) -> list[str]:
+    return BOUNDARY_TOKEN_RE.findall(text)
+
+
+def get_boundary_token_indices(paragraph: str, segments: list[str]) -> tuple[list[str], set[int]]:
+    paragraph_tokens = tokenize_boundary_view(paragraph)
+    boundary_indices: set[int] = set()
+    cursor = 0
+
+    for segment in segments[:-1]:
+        cursor += len(tokenize_boundary_view(segment))
+        if 0 < cursor <= len(paragraph_tokens):
+            boundary_indices.add(cursor - 1)
+
+    return paragraph_tokens, boundary_indices
+
+
+def render_boundary_token_view(title: str, tokens: list[str], boundary_indices: set[int], css_class: str, caption: str) -> None:
+    token_html: list[str] = []
+    for index, token in enumerate(tokens):
+        classes = f"boundary-token {css_class}" if index in boundary_indices else "boundary-token"
+        badge = "<span class='boundary-badge'>BT</span>" if index in boundary_indices else ""
+        token_html.append(
+            f"<span class='{classes}'>{html.escape(token)}{badge}</span>"
+        )
+
+    st.markdown(f"### {title}")
+    st.markdown(
+        f"""
+        <div class='boundary-shell'>
+            <div class='segment-meta'>{html.escape(caption)}</div>
+            <div class='boundary-flow'>
+                {''.join(token_html)}
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def classify_since(token: Any, doc: Any) -> str:
     window = doc[token.i + 1 : min(len(doc), token.i + 8)]
     time_cues = {"ago", "today", "yesterday", "tomorrow", "earlier", "later", "last", "next", "then"}
@@ -522,6 +607,8 @@ with tab1:
     )
     sample = fetch_neuraleduseg_demo()
     rule_segments = rule_based_segment(sample["paragraph"])
+    paragraph_tokens, predicted_boundary_indices = get_boundary_token_indices(sample["paragraph"], rule_segments)
+    _, gold_boundary_indices = get_boundary_token_indices(sample["paragraph"], sample["gold_segments"])
 
     st.markdown("#### 示例原文")
     st.text_area(
@@ -549,6 +636,25 @@ with tab1:
             sample["gold_segments"],
             "gold",
             "右侧直接展示数据集中这段文本对应的人工 EDU 边界。",
+        )
+
+    st.markdown("#### Boundary Token 高亮")
+    boundary_col1, boundary_col2 = st.columns(2)
+    with boundary_col1:
+        render_boundary_token_view(
+            "规则预测边界词",
+            paragraph_tokens,
+            predicted_boundary_indices,
+            "predicted",
+            "橙色高亮表示规则切分器预测为 EDU 边界的 token。",
+        )
+    with boundary_col2:
+        render_boundary_token_view(
+            "金标准边界词",
+            paragraph_tokens,
+            gold_boundary_indices,
+            "gold",
+            "绿色高亮表示 NeuralEDUSeg 示例数据中的人工边界 token。",
         )
 
     st.info(
