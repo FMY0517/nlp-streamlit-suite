@@ -15,6 +15,9 @@ import importlib
 import os
 import subprocess
 import sys
+import urllib.request
+import zipfile
+from pathlib import Path
 from typing import Any
 
 import streamlit as st
@@ -224,6 +227,7 @@ SPACY_MODEL_INSTALL_HINT = (
     "en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl"
 )
 BENEPAR_MODEL_NAME = "benepar_en3"
+BENEPAR_MODEL_URL = "https://github.com/nikitakit/self-attentive-parser/releases/download/models/benepar_en3.zip"
 HF_CACHE_DIR = ensure_named_cache_dir("hf_cache_syntax")
 NLTK_DATA_DIR = get_nltk_data_dir()
 os.environ.setdefault("HF_HOME", str(HF_CACHE_DIR))
@@ -274,12 +278,33 @@ def ensure_benepar_model() -> bool:
             benepar.Parser(BENEPAR_MODEL_NAME)
             return True
         except Exception as exc:  # noqa: BLE001
-            st.warning(
-                "当前环境未能成功下载 benepar 英文成分句法模型 `benepar_en3`，"
-                "所以下半部分会暂时回退为提示信息。\n\n"
-                f"下载失败原因：{exc}"
-            )
-            return False
+            try:
+                models_dir = Path(NLTK_DATA_DIR) / "models"
+                target_dir = models_dir / BENEPAR_MODEL_NAME
+                archive_path = HF_CACHE_DIR / f"{BENEPAR_MODEL_NAME}.zip"
+                models_dir.mkdir(parents=True, exist_ok=True)
+
+                urllib.request.urlretrieve(BENEPAR_MODEL_URL, archive_path)
+                with zipfile.ZipFile(archive_path) as zip_file:
+                    zip_file.extractall(models_dir)
+
+                if str(NLTK_DATA_DIR) not in nltk.data.path:
+                    nltk.data.path.append(str(NLTK_DATA_DIR))
+                if not target_dir.exists():
+                    raise RuntimeError(f"已下载压缩包，但未找到目标目录：{target_dir}")
+                benepar.Parser(BENEPAR_MODEL_NAME)
+                return True
+            except Exception as direct_exc:  # noqa: BLE001
+                combined_error = (
+                    f"benepar 官方下载器失败：{exc}\n"
+                    f"官方模型直链下载失败：{direct_exc}"
+                )
+                st.warning(
+                    "当前环境未能成功下载 benepar 英文成分句法模型 `benepar_en3`，"
+                    "所以下半部分会暂时回退为提示信息。\n\n"
+                    f"下载失败原因：{combined_error}"
+                )
+                return False
 
 
 def ensure_nltk_ready() -> bool:
