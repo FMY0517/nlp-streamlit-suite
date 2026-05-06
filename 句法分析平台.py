@@ -686,6 +686,183 @@ def tree_to_html(tree) -> str:
     return f"<div class='const-tree'>{render_node(tree, is_root=True)}</div>"
 
 
+def build_interactive_tree_component_html(tree) -> str:
+    """把真实成分树包装成可拖动查看的组件 HTML。"""
+
+    tree_markup = tree_to_html(tree)
+    return f"""
+    <!DOCTYPE html>
+    <html lang="zh-CN">
+    <head>
+      <meta charset="utf-8" />
+      <style>
+        html, body {{
+          margin: 0;
+          padding: 0;
+          background: transparent;
+          font-family: 'IBM Plex Sans', 'Microsoft YaHei', sans-serif;
+        }}
+        .viewer {{
+          position: relative;
+          height: 620px;
+          overflow: hidden;
+          border-radius: 26px;
+          border: 1px solid rgba(125, 211, 252, 0.38);
+          background: linear-gradient(180deg, rgba(239,252,252,0.92), rgba(248,251,255,0.96));
+          cursor: grab;
+          user-select: none;
+        }}
+        .viewer.dragging {{
+          cursor: grabbing;
+        }}
+        .hint {{
+          position: absolute;
+          top: 12px;
+          right: 14px;
+          z-index: 5;
+          padding: 0.18rem 0.56rem;
+          border-radius: 999px;
+          background: rgba(255,255,255,0.78);
+          color: #4b5563;
+          font-size: 12px;
+          border: 1px solid rgba(148,163,184,0.22);
+          backdrop-filter: blur(6px);
+        }}
+        .canvas {{
+          position: absolute;
+          top: 0;
+          left: 0;
+          padding: 20px;
+          transform-origin: top left;
+          will-change: transform;
+        }}
+        .const-tree {{
+          min-width: max-content;
+          color: #0f172a;
+          font-family: 'IBM Plex Sans', 'Microsoft YaHei', sans-serif;
+          font-size: 0.88rem;
+        }}
+        .const-card-node {{
+          position: relative;
+          display: inline-flex;
+          flex-direction: column;
+          gap: 0.75rem;
+          padding: 1.45rem 0.88rem 0.88rem;
+          border-radius: 1.4rem;
+          border: 1px solid rgba(125, 211, 252, 0.45);
+          background: linear-gradient(180deg, rgba(255,255,255,0.92), rgba(240,249,255,0.82));
+          box-shadow: inset 0 1px 0 rgba(255,255,255,0.7);
+        }}
+        .const-card-node.root {{
+          background: linear-gradient(180deg, rgba(248,253,253,0.98), rgba(239,252,252,0.9));
+        }}
+        .const-card-children {{
+          display: flex;
+          align-items: stretch;
+          gap: 0.75rem;
+        }}
+        .const-card-label {{
+          position: absolute;
+          top: 0.58rem;
+          left: 0.7rem;
+          display: inline-block;
+          padding: 0.14rem 0.5rem;
+          border-radius: 999px;
+          background: rgba(207, 250, 254, 0.95);
+          color: #0b7ea4;
+          font-size: 0.76rem;
+          font-weight: 800;
+          letter-spacing: 0.02em;
+        }}
+        .const-terminal {{
+          min-width: 78px;
+          padding: 0.58rem 0.68rem;
+          border-radius: 1.05rem;
+          border: 1px solid rgba(125, 211, 252, 0.42);
+          background: rgba(255,255,255,0.95);
+          display: inline-flex;
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 0.42rem;
+        }}
+        .const-terminal-pos {{
+          display: inline-block;
+          padding: 0.12rem 0.46rem;
+          border-radius: 999px;
+          background: rgba(207, 250, 254, 0.95);
+          color: #0b7ea4;
+          font-size: 0.74rem;
+          font-weight: 800;
+        }}
+        .const-terminal-word {{
+          display: inline-block;
+          padding: 0.28rem 0.56rem;
+          border-radius: 999px;
+          background: rgba(236, 253, 255, 0.98);
+          color: #0f4c5c;
+          font-size: 0.9rem;
+          font-weight: 700;
+        }}
+      </style>
+    </head>
+    <body>
+      <div class="viewer" id="viewer">
+        <div class="hint">按住拖动查看</div>
+        <div class="canvas" id="canvas">
+          {tree_markup}
+        </div>
+      </div>
+      <script>
+        const viewer = document.getElementById('viewer');
+        const canvas = document.getElementById('canvas');
+        let isDragging = false;
+        let startX = 0;
+        let startY = 0;
+        let offsetX = 16;
+        let offsetY = 16;
+
+        function updateTransform() {{
+          canvas.style.transform = `translate(${{offsetX}}px, ${{offsetY}}px)`;
+        }}
+
+        updateTransform();
+
+        viewer.addEventListener('pointerdown', (event) => {{
+          isDragging = true;
+          startX = event.clientX - offsetX;
+          startY = event.clientY - offsetY;
+          viewer.classList.add('dragging');
+          viewer.setPointerCapture(event.pointerId);
+        }});
+
+        viewer.addEventListener('pointermove', (event) => {{
+          if (!isDragging) return;
+          offsetX = event.clientX - startX;
+          offsetY = event.clientY - startY;
+          updateTransform();
+        }});
+
+        function stopDragging(event) {{
+          if (event && viewer.hasPointerCapture(event.pointerId)) {{
+            viewer.releasePointerCapture(event.pointerId);
+          }}
+          isDragging = false;
+          viewer.classList.remove('dragging');
+        }}
+
+        viewer.addEventListener('pointerup', stopDragging);
+        viewer.addEventListener('pointercancel', stopDragging);
+        viewer.addEventListener('pointerleave', (event) => {{
+          if (isDragging && event.buttons === 0) {{
+            stopDragging(event);
+          }}
+        }});
+      </script>
+    </body>
+    </html>
+    """
+
+
 def generate_dynamic_explanations(doc, phrases: list[dict[str, str]]) -> list[str]:
     """根据当前解析结果自动生成简要学习说明。"""
 
@@ -875,9 +1052,7 @@ if constituency_tree is None:
     st.warning("当前无法生成真实成分句法树，请检查 benepar 及其模型是否安装成功。")
 else:
     pretty_tree_text = tree_to_pretty_text(constituency_tree)
-    st.markdown('<div class="const-tree-shell">', unsafe_allow_html=True)
-    st.markdown(tree_to_html(constituency_tree), unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
+    components.html(build_interactive_tree_component_html(constituency_tree), height=640, scrolling=False)
     with st.expander("查看 benepar 原始括号表示", expanded=False):
         st.markdown(
             f"<pre class='tree-text'>{html.escape(pretty_tree_text)}</pre>",
