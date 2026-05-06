@@ -759,7 +759,7 @@ st.markdown(
 st.markdown('<div class="syntax-card">', unsafe_allow_html=True)
 if constituency_mode == "benepar":
     st.markdown(
-        '<div class="syntax-caption">下栏展示短语如何逐层组合成整个句子。优先使用 SVG 图形树；若图形化失败，则回退为多级缩进文本树。</div>',
+        '<div class="syntax-caption">下栏展示的是 benepar 实时生成的真实成分句法树。优先使用 SVG 图形树；下方同步给出同一棵解析树的文本表示，便于核对而不是额外伪造一棵树。</div>',
         unsafe_allow_html=True,
     )
 else:
@@ -771,18 +771,18 @@ else:
 if constituency_tree is None:
     st.warning("当前无法生成真实成分句法树，请检查 benepar 及其模型是否安装成功。")
 else:
+    pretty_tree_text = tree_to_pretty_text(constituency_tree)
     constituency_svg = tree_to_svg(constituency_tree)
     if constituency_svg:
         st.markdown('<div class="tree-shell">', unsafe_allow_html=True)
         components.html(constituency_svg, height=520, scrolling=True)
         st.markdown("</div>", unsafe_allow_html=True)
-    else:
-        st.markdown('<div class="tree-shell">', unsafe_allow_html=True)
-        st.markdown(
-            f"<pre class='tree-text'>{html.escape(tree_to_pretty_text(constituency_tree))}</pre>",
-            unsafe_allow_html=True,
-        )
-        st.markdown("</div>", unsafe_allow_html=True)
+    st.markdown('<div class="tree-shell">', unsafe_allow_html=True)
+    st.markdown(
+        f"<pre class='tree-text'>{html.escape(pretty_tree_text)}</pre>",
+        unsafe_allow_html=True,
+    )
+    st.markdown("</div>", unsafe_allow_html=True)
 
 st.markdown("</div>", unsafe_allow_html=True)
 
