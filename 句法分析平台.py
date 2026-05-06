@@ -442,52 +442,14 @@ def parse_constituency(text: str):
     return parser.parse(tokens)
 
 
-def build_shallow_constituency_tree(doc):
-    """在 benepar 不可用时，基于 spaCy 词性构造浅层成分树。
-
-    这个回退方案不是完整的神经成分句法分析，
-    但足以在课堂演示里展示 NP / VP / PP 等基本短语结构。
-    """
-
-    if nltk is None:
-        return None
-
-    grammar = r"""
-        NP: {<DET>?<NUM>*<ADJ|ADV>*<NOUN|PROPN|PRON>+}
-        PP: {<ADP><NP>}
-        VP: {<AUX|VERB>+<PART>?<ADV>*}
-        ADJP: {<ADV>*<ADJ>+}
-        ADVP: {<ADV>+}
-    """
-
-    chunk_parser = nltk.RegexpParser(grammar)
-    tagged_tokens = [(token.text, token.pos_) for token in doc if not token.is_space]
-    if not tagged_tokens:
-        return None
-
-    chunk_tree = chunk_parser.parse(tagged_tokens)
-
-    def convert_node(node):
-        if isinstance(node, tuple):
-            word, pos = node
-            return nltk.Tree(pos, [word])
-        return nltk.Tree(node.label(), [convert_node(child) for child in node])
-
-    return nltk.Tree("S", [convert_node(child) for child in chunk_tree])
-
-
 def load_constituency_tree(text: str, doc):
-    """优先使用 benepar，失败时回退到浅层规则成分树。"""
+    """仅使用 benepar 生成真实成分句法树。"""
 
     parser = load_benepar_parser()
     if parser is not None:
         tokens = sentence_tokens(text)
         if tokens:
             return parser.parse(tokens), "benepar"
-
-    fallback_tree = build_shallow_constituency_tree(doc)
-    if fallback_tree is not None:
-        return fallback_tree, "fallback"
 
     return None, "unavailable"
 
@@ -712,7 +674,7 @@ with st.expander("依赖与模型说明", expanded=False):
     st.markdown(
         "为了让 Streamlit Cloud 更稳定，建议把 `en_core_web_sm` 在部署阶段预装到环境里，"
         "不要依赖页面运行时再下载。`benepar_en3` 如果缺失，页面会通过 benepar 官方模型索引自动下载到可写缓存目录；"
-        "若下载失败，页面仍会保留依存句法分析，并对成分句法部分做降级提示。"
+        "若下载失败，页面仍会保留依存句法分析，但不会再用规则树冒充成分句法结果，而是明确提示当前成分句法不可用。"
     )
 
 
@@ -800,20 +762,14 @@ if constituency_mode == "benepar":
         '<div class="syntax-caption">下栏展示短语如何逐层组合成整个句子。优先使用 SVG 图形树；若图形化失败，则回退为多级缩进文本树。</div>',
         unsafe_allow_html=True,
     )
-elif constituency_mode == "fallback":
-    st.markdown(
-        '<div class="syntax-caption">当前未能加载 benepar 神经成分句法模型，以下展示基于 spaCy 词性规则生成的浅层短语结构，可用于课堂演示基本 NP / VP / PP 组合。</div>',
-        unsafe_allow_html=True,
-    )
-    st.info("当前下栏使用规则回退模式，不是完整的神经成分句法分析结果。")
 else:
     st.markdown(
-        '<div class="syntax-caption">当前环境既无法加载 benepar，也未能构造回退用的浅层短语树。</div>',
+        '<div class="syntax-caption">当前环境未能加载 benepar 神经成分句法模型，因此下栏不会展示伪造或规则拼接的成分树。</div>',
         unsafe_allow_html=True,
     )
 
 if constituency_tree is None:
-    st.warning("当前无法生成成分句法树，请检查 benepar 及其模型是否安装成功。")
+    st.warning("当前无法生成真实成分句法树，请检查 benepar 及其模型是否安装成功。")
 else:
     constituency_svg = tree_to_svg(constituency_tree)
     if constituency_svg:
