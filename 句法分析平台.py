@@ -70,81 +70,6 @@ inject_iekg_theme(
         white-space: pre-wrap;
         font-family: 'IBM Plex Mono', 'Consolas', monospace;
     }
-    .const-tree-shell {
-        background: linear-gradient(180deg, rgba(239,252,252,0.92), rgba(248,251,255,0.96));
-        border-radius: 26px;
-        border: 1px solid rgba(125, 211, 252, 0.38);
-        padding: 1.1rem;
-        overflow: auto;
-        max-height: 620px;
-    }
-    .const-tree {
-        min-width: max-content;
-        color: #0f172a;
-        font-family: 'IBM Plex Sans', 'Microsoft YaHei', sans-serif;
-        font-size: 0.88rem;
-    }
-    .const-card-node {
-        position: relative;
-        display: inline-flex;
-        flex-direction: column;
-        gap: 0.75rem;
-        padding: 1.45rem 0.88rem 0.88rem;
-        border-radius: 1.4rem;
-        border: 1px solid rgba(125, 211, 252, 0.45);
-        background: linear-gradient(180deg, rgba(255,255,255,0.92), rgba(240,249,255,0.82));
-        box-shadow: inset 0 1px 0 rgba(255,255,255,0.7);
-    }
-    .const-card-node.root {
-        background: linear-gradient(180deg, rgba(248,253,253,0.98), rgba(239,252,252,0.9));
-    }
-    .const-card-children {
-        display: flex;
-        align-items: stretch;
-        gap: 0.75rem;
-    }
-    .const-card-label {
-        position: absolute;
-        top: 0.58rem;
-        left: 0.7rem;
-        display: inline-block;
-        padding: 0.14rem 0.5rem;
-        border-radius: 999px;
-        background: rgba(207, 250, 254, 0.95);
-        color: #0b7ea4;
-        font-size: 0.76rem;
-        font-weight: 800;
-        letter-spacing: 0.02em;
-    }
-    .const-terminal {
-        min-width: 78px;
-        padding: 0.58rem 0.68rem;
-        border-radius: 1.05rem;
-        border: 1px solid rgba(125, 211, 252, 0.42);
-        background: rgba(255,255,255,0.95);
-        display: inline-flex;
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 0.42rem;
-    }
-    .const-terminal-pos {
-        display: inline-block;
-        padding: 0.12rem 0.46rem;
-        border-radius: 999px;
-        background: rgba(207, 250, 254, 0.95);
-        color: #0b7ea4;
-        font-size: 0.74rem;
-        font-weight: 800;
-    }
-    .const-terminal-word {
-        display: inline-block;
-        padding: 0.28rem 0.56rem;
-        border-radius: 999px;
-        background: rgba(236, 253, 255, 0.98);
-        color: #0f4c5c;
-        font-size: 0.9rem;
-        font-weight: 700;
-    }
     .analysis-box {
         border-radius: 18px;
         padding: 0.95rem 1rem;
@@ -517,14 +442,52 @@ def parse_constituency(text: str):
     return parser.parse(tokens)
 
 
+def build_shallow_constituency_tree(doc):
+    """在 benepar 不可用时，基于 spaCy 词性构造浅层成分树。
+
+    这个回退方案不是完整的神经成分句法分析，
+    但足以在课堂演示里展示 NP / VP / PP 等基本短语结构。
+    """
+
+    if nltk is None:
+        return None
+
+    grammar = r"""
+        NP: {<DET>?<NUM>*<ADJ|ADV>*<NOUN|PROPN|PRON>+}
+        PP: {<ADP><NP>}
+        VP: {<AUX|VERB>+<PART>?<ADV>*}
+        ADJP: {<ADV>*<ADJ>+}
+        ADVP: {<ADV>+}
+    """
+
+    chunk_parser = nltk.RegexpParser(grammar)
+    tagged_tokens = [(token.text, token.pos_) for token in doc if not token.is_space]
+    if not tagged_tokens:
+        return None
+
+    chunk_tree = chunk_parser.parse(tagged_tokens)
+
+    def convert_node(node):
+        if isinstance(node, tuple):
+            word, pos = node
+            return nltk.Tree(pos, [word])
+        return nltk.Tree(node.label(), [convert_node(child) for child in node])
+
+    return nltk.Tree("S", [convert_node(child) for child in chunk_tree])
+
+
 def load_constituency_tree(text: str, doc):
-    """仅使用 benepar 生成真实成分句法树。"""
+    """优先使用 benepar，失败时回退到浅层规则成分树。"""
 
     parser = load_benepar_parser()
     if parser is not None:
         tokens = sentence_tokens(text)
         if tokens:
             return parser.parse(tokens), "benepar"
+
+    fallback_tree = build_shallow_constituency_tree(doc)
+    if fallback_tree is not None:
+        return fallback_tree, "fallback"
 
     return None, "unavailable"
 
@@ -658,35 +621,6 @@ def tree_to_pretty_text(tree) -> str:
     return tree.pformat(margin=80)
 
 
-def tree_to_html(tree) -> str:
-    """把 benepar 的真实解析树渲染为嵌套卡片树。"""
-
-    def render_node(node, is_root: bool = False) -> str:
-        if isinstance(node, str):
-            return f"<span class='const-terminal-word'>{html.escape(node)}</span>"
-
-        label = html.escape(str(node.label()))
-        if len(node) == 1 and isinstance(node[0], str):
-            word = html.escape(str(node[0]))
-            return (
-                "<div class='const-terminal'>"
-                f"<span class='const-terminal-pos'>{label}</span>"
-                f"<span class='const-terminal-word'>{word}</span>"
-                "</div>"
-            )
-
-        children_html = "".join(render_node(child) for child in node)
-        root_class = " root" if is_root else ""
-        return (
-            f"<div class='const-card-node{root_class}'>"
-            f"<span class='const-card-label'>{label}</span>"
-            f"<div class='const-card-children'>{children_html}</div>"
-            "</div>"
-        )
-
-    return f"<div class='const-tree'>{render_node(tree, is_root=True)}</div>"
-
-
 def generate_dynamic_explanations(doc, phrases: list[dict[str, str]]) -> list[str]:
     """根据当前解析结果自动生成简要学习说明。"""
 
@@ -778,7 +712,7 @@ with st.expander("依赖与模型说明", expanded=False):
     st.markdown(
         "为了让 Streamlit Cloud 更稳定，建议把 `en_core_web_sm` 在部署阶段预装到环境里，"
         "不要依赖页面运行时再下载。`benepar_en3` 如果缺失，页面会通过 benepar 官方模型索引自动下载到可写缓存目录；"
-        "若下载失败，页面仍会保留依存句法分析，但不会再用规则树冒充成分句法结果，而是明确提示当前成分句法不可用。"
+        "若下载失败，页面仍会保留依存句法分析，并对成分句法部分做降级提示。"
     )
 
 
@@ -863,28 +797,36 @@ st.markdown(
 st.markdown('<div class="syntax-card">', unsafe_allow_html=True)
 if constituency_mode == "benepar":
     st.markdown(
-        '<div class="syntax-caption">下栏展示的是 benepar 实时生成的真实成分句法树。优先使用 SVG 图形树；下方同步给出同一棵解析树的文本表示，便于核对而不是额外伪造一棵树。</div>',
+        '<div class="syntax-caption">下栏展示短语如何逐层组合成整个句子。优先使用 SVG 图形树；若图形化失败，则回退为多级缩进文本树。</div>',
         unsafe_allow_html=True,
     )
+elif constituency_mode == "fallback":
+    st.markdown(
+        '<div class="syntax-caption">当前未能加载 benepar 神经成分句法模型，以下展示基于 spaCy 词性规则生成的浅层短语结构，可用于课堂演示基本 NP / VP / PP 组合。</div>',
+        unsafe_allow_html=True,
+    )
+    st.info("当前下栏使用规则回退模式，不是完整的神经成分句法分析结果。")
 else:
     st.markdown(
-        '<div class="syntax-caption">当前环境未能加载 benepar 神经成分句法模型，因此下栏不会展示伪造或规则拼接的成分树。</div>',
+        '<div class="syntax-caption">当前环境既无法加载 benepar，也未能构造回退用的浅层短语树。</div>',
         unsafe_allow_html=True,
     )
 
 if constituency_tree is None:
-    st.warning("当前无法生成真实成分句法树，请检查 benepar 及其模型是否安装成功。")
+    st.warning("当前无法生成成分句法树，请检查 benepar 及其模型是否安装成功。")
 else:
-    pretty_tree_text = tree_to_pretty_text(constituency_tree)
-    st.caption("可在下方框中使用横向或纵向滚动条查看整棵真实成分句法树。")
-    st.markdown('<div class="const-tree-shell">', unsafe_allow_html=True)
-    st.markdown(tree_to_html(constituency_tree), unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
-    with st.expander("查看 benepar 原始括号表示", expanded=False):
+    constituency_svg = tree_to_svg(constituency_tree)
+    if constituency_svg:
+        st.markdown('<div class="tree-shell">', unsafe_allow_html=True)
+        components.html(constituency_svg, height=520, scrolling=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+    else:
+        st.markdown('<div class="tree-shell">', unsafe_allow_html=True)
         st.markdown(
-            f"<pre class='tree-text'>{html.escape(pretty_tree_text)}</pre>",
+            f"<pre class='tree-text'>{html.escape(tree_to_pretty_text(constituency_tree))}</pre>",
             unsafe_allow_html=True,
         )
+        st.markdown("</div>", unsafe_allow_html=True)
 
 st.markdown("</div>", unsafe_allow_html=True)
 

@@ -7,7 +7,7 @@ matplotlib
 plotly
 gensim
 torch
-transformers>=4.41,<4.42
+transformers
 openai
 sentencepiece
 jieba
