@@ -70,6 +70,97 @@ inject_iekg_theme(
         white-space: pre-wrap;
         font-family: 'IBM Plex Mono', 'Consolas', monospace;
     }
+    .const-tree-shell {
+        background: rgba(255,255,255,0.94);
+        border-radius: 18px;
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        padding: 1rem 0.8rem;
+        overflow-x: auto;
+    }
+    .const-tree {
+        min-width: max-content;
+        color: #0f172a;
+        font-family: 'IBM Plex Sans', 'Microsoft YaHei', sans-serif;
+        font-size: 0.94rem;
+    }
+    .const-tree ul {
+        position: relative;
+        padding-top: 1.1rem;
+        padding-left: 0;
+        margin: 0;
+        display: flex;
+        justify-content: center;
+    }
+    .const-tree li {
+        position: relative;
+        list-style-type: none;
+        text-align: center;
+        padding: 1.1rem 0.45rem 0 0.45rem;
+    }
+    .const-tree li::before,
+    .const-tree li::after {
+        content: "";
+        position: absolute;
+        top: 0;
+        right: 50%;
+        width: 50%;
+        height: 1.1rem;
+        border-top: 1.5px solid #94a3b8;
+    }
+    .const-tree li::after {
+        right: auto;
+        left: 50%;
+        border-left: 1.5px solid #94a3b8;
+    }
+    .const-tree li:only-child::before,
+    .const-tree li:only-child::after {
+        display: none;
+    }
+    .const-tree li:only-child {
+        padding-top: 0;
+    }
+    .const-tree li:first-child::before,
+    .const-tree li:last-child::after {
+        border: 0;
+    }
+    .const-tree li:last-child::before {
+        border-right: 1.5px solid #94a3b8;
+        border-radius: 0 10px 0 0;
+    }
+    .const-tree li:first-child::after {
+        border-radius: 10px 0 0 0;
+    }
+    .const-tree ul ul::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 50%;
+        width: 0;
+        height: 1.1rem;
+        border-left: 1.5px solid #94a3b8;
+    }
+    .const-node,
+    .const-leaf {
+        display: inline-block;
+        border-radius: 999px;
+        padding: 0.22rem 0.62rem;
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        background: linear-gradient(180deg, #ffffff, #eff6ff);
+        box-shadow: 0 6px 14px rgba(15, 23, 42, 0.05);
+        white-space: nowrap;
+    }
+    .const-node {
+        font-weight: 700;
+        color: #1d4ed8;
+    }
+    .const-node.terminal {
+        color: #7c3aed;
+        background: linear-gradient(180deg, #ffffff, #f5f3ff);
+    }
+    .const-leaf {
+        color: #0f172a;
+        background: linear-gradient(180deg, #ffffff, #f8fafc);
+    }
     .analysis-box {
         border-radius: 18px;
         padding: 0.95rem 1rem;
@@ -583,6 +674,34 @@ def tree_to_pretty_text(tree) -> str:
     return tree.pformat(margin=80)
 
 
+def tree_to_html(tree) -> str:
+    """把 benepar 的真实解析树渲染为层级 HTML 树。"""
+
+    def render_node(node) -> str:
+        if isinstance(node, str):
+            return f"<li><span class='const-leaf'>{html.escape(node)}</span></li>"
+
+        label = html.escape(str(node.label()))
+        if len(node) == 1 and isinstance(node[0], str):
+            child_html = render_node(node[0])
+            return (
+                "<li>"
+                f"<span class='const-node terminal'>{label}</span>"
+                f"<ul>{child_html}</ul>"
+                "</li>"
+            )
+
+        children_html = "".join(render_node(child) for child in node)
+        return (
+            "<li>"
+            f"<span class='const-node'>{label}</span>"
+            f"<ul>{children_html}</ul>"
+            "</li>"
+        )
+
+    return f"<div class='const-tree'><ul>{render_node(tree)}</ul></div>"
+
+
 def generate_dynamic_explanations(doc, phrases: list[dict[str, str]]) -> list[str]:
     """根据当前解析结果自动生成简要学习说明。"""
 
@@ -777,12 +896,14 @@ else:
         st.markdown('<div class="tree-shell">', unsafe_allow_html=True)
         components.html(constituency_svg, height=520, scrolling=True)
         st.markdown("</div>", unsafe_allow_html=True)
-    st.markdown('<div class="tree-shell">', unsafe_allow_html=True)
-    st.markdown(
-        f"<pre class='tree-text'>{html.escape(pretty_tree_text)}</pre>",
-        unsafe_allow_html=True,
-    )
+    st.markdown('<div class="const-tree-shell">', unsafe_allow_html=True)
+    st.markdown(tree_to_html(constituency_tree), unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
+    with st.expander("查看 benepar 原始括号表示", expanded=False):
+        st.markdown(
+            f"<pre class='tree-text'>{html.escape(pretty_tree_text)}</pre>",
+            unsafe_allow_html=True,
+        )
 
 st.markdown("</div>", unsafe_allow_html=True)
 
