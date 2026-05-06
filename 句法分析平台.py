@@ -71,95 +71,78 @@ inject_iekg_theme(
         font-family: 'IBM Plex Mono', 'Consolas', monospace;
     }
     .const-tree-shell {
-        background: rgba(255,255,255,0.94);
-        border-radius: 18px;
-        border: 1px solid rgba(148, 163, 184, 0.18);
-        padding: 1rem 0.8rem;
+        background: linear-gradient(180deg, rgba(239,252,252,0.92), rgba(248,251,255,0.96));
+        border-radius: 26px;
+        border: 1px solid rgba(125, 211, 252, 0.38);
+        padding: 1.35rem;
         overflow-x: auto;
     }
     .const-tree {
         min-width: max-content;
         color: #0f172a;
         font-family: 'IBM Plex Sans', 'Microsoft YaHei', sans-serif;
-        font-size: 0.94rem;
+        font-size: 0.95rem;
     }
-    .const-tree ul {
+    .const-card-node {
         position: relative;
-        padding-top: 1.1rem;
-        padding-left: 0;
-        margin: 0;
+        display: inline-flex;
+        flex-direction: column;
+        gap: 0.9rem;
+        padding: 1.7rem 1rem 1rem;
+        border-radius: 1.6rem;
+        border: 1px solid rgba(125, 211, 252, 0.45);
+        background: linear-gradient(180deg, rgba(255,255,255,0.92), rgba(240,249,255,0.82));
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.7);
+    }
+    .const-card-node.root {
+        background: linear-gradient(180deg, rgba(248,253,253,0.98), rgba(239,252,252,0.9));
+    }
+    .const-card-children {
         display: flex;
-        justify-content: center;
+        align-items: stretch;
+        gap: 0.9rem;
     }
-    .const-tree li {
-        position: relative;
-        list-style-type: none;
-        text-align: center;
-        padding: 1.1rem 0.45rem 0 0.45rem;
-    }
-    .const-tree li::before,
-    .const-tree li::after {
-        content: "";
+    .const-card-label {
         position: absolute;
-        top: 0;
-        right: 50%;
-        width: 50%;
-        height: 1.1rem;
-        border-top: 1.5px solid #94a3b8;
-    }
-    .const-tree li::after {
-        right: auto;
-        left: 50%;
-        border-left: 1.5px solid #94a3b8;
-    }
-    .const-tree li:only-child::before,
-    .const-tree li:only-child::after {
-        display: none;
-    }
-    .const-tree li:only-child {
-        padding-top: 0;
-    }
-    .const-tree li:first-child::before,
-    .const-tree li:last-child::after {
-        border: 0;
-    }
-    .const-tree li:last-child::before {
-        border-right: 1.5px solid #94a3b8;
-        border-radius: 0 10px 0 0;
-    }
-    .const-tree li:first-child::after {
-        border-radius: 10px 0 0 0;
-    }
-    .const-tree ul ul::before {
-        content: "";
-        position: absolute;
-        top: 0;
-        left: 50%;
-        width: 0;
-        height: 1.1rem;
-        border-left: 1.5px solid #94a3b8;
-    }
-    .const-node,
-    .const-leaf {
+        top: 0.7rem;
+        left: 0.8rem;
         display: inline-block;
+        padding: 0.18rem 0.56rem;
         border-radius: 999px;
-        padding: 0.22rem 0.62rem;
-        border: 1px solid rgba(148, 163, 184, 0.2);
-        background: linear-gradient(180deg, #ffffff, #eff6ff);
-        box-shadow: 0 6px 14px rgba(15, 23, 42, 0.05);
-        white-space: nowrap;
+        background: rgba(207, 250, 254, 0.95);
+        color: #0b7ea4;
+        font-size: 0.82rem;
+        font-weight: 800;
+        letter-spacing: 0.02em;
     }
-    .const-node {
+    .const-terminal {
+        min-width: 90px;
+        padding: 0.7rem 0.8rem;
+        border-radius: 1.2rem;
+        border: 1px solid rgba(125, 211, 252, 0.42);
+        background: rgba(255,255,255,0.95);
+        display: inline-flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.48rem;
+    }
+    .const-terminal-pos {
+        display: inline-block;
+        padding: 0.16rem 0.54rem;
+        border-radius: 999px;
+        background: rgba(207, 250, 254, 0.95);
+        color: #0b7ea4;
+        font-size: 0.8rem;
+        font-weight: 800;
+    }
+    .const-terminal-word {
+        display: inline-block;
+        padding: 0.34rem 0.66rem;
+        border-radius: 999px;
+        background: rgba(236, 253, 255, 0.98);
+        color: #0f4c5c;
+        font-size: 0.98rem;
         font-weight: 700;
-        color: #1d4ed8;
-    }
-    .const-node.terminal {
-        color: #7c3aed;
-        background: linear-gradient(180deg, #ffffff, #f5f3ff);
-    }
-    .const-leaf {
-        color: #0f172a;
-        background: linear-gradient(180deg, #ffffff, #f8fafc);
     }
     .analysis-box {
         border-radius: 18px;
@@ -675,31 +658,32 @@ def tree_to_pretty_text(tree) -> str:
 
 
 def tree_to_html(tree) -> str:
-    """把 benepar 的真实解析树渲染为层级 HTML 树。"""
+    """把 benepar 的真实解析树渲染为嵌套卡片树。"""
 
-    def render_node(node) -> str:
+    def render_node(node, is_root: bool = False) -> str:
         if isinstance(node, str):
-            return f"<li><span class='const-leaf'>{html.escape(node)}</span></li>"
+            return f"<span class='const-terminal-word'>{html.escape(node)}</span>"
 
         label = html.escape(str(node.label()))
         if len(node) == 1 and isinstance(node[0], str):
-            child_html = render_node(node[0])
+            word = html.escape(str(node[0]))
             return (
-                "<li>"
-                f"<span class='const-node terminal'>{label}</span>"
-                f"<ul>{child_html}</ul>"
-                "</li>"
+                "<div class='const-terminal'>"
+                f"<span class='const-terminal-pos'>{label}</span>"
+                f"<span class='const-terminal-word'>{word}</span>"
+                "</div>"
             )
 
         children_html = "".join(render_node(child) for child in node)
+        root_class = " root" if is_root else ""
         return (
-            "<li>"
-            f"<span class='const-node'>{label}</span>"
-            f"<ul>{children_html}</ul>"
-            "</li>"
+            f"<div class='const-card-node{root_class}'>"
+            f"<span class='const-card-label'>{label}</span>"
+            f"<div class='const-card-children'>{children_html}</div>"
+            "</div>"
         )
 
-    return f"<div class='const-tree'><ul>{render_node(tree)}</ul></div>"
+    return f"<div class='const-tree'>{render_node(tree, is_root=True)}</div>"
 
 
 def generate_dynamic_explanations(doc, phrases: list[dict[str, str]]) -> list[str]:
@@ -891,11 +875,6 @@ if constituency_tree is None:
     st.warning("当前无法生成真实成分句法树，请检查 benepar 及其模型是否安装成功。")
 else:
     pretty_tree_text = tree_to_pretty_text(constituency_tree)
-    constituency_svg = tree_to_svg(constituency_tree)
-    if constituency_svg:
-        st.markdown('<div class="tree-shell">', unsafe_allow_html=True)
-        components.html(constituency_svg, height=520, scrolling=True)
-        st.markdown("</div>", unsafe_allow_html=True)
     st.markdown('<div class="const-tree-shell">', unsafe_allow_html=True)
     st.markdown(tree_to_html(constituency_tree), unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
