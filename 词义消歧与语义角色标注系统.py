@@ -109,7 +109,6 @@ def load_bert_model():
 # 设置页面配置
 st.set_page_config(
     page_title='深层语义分析平台',
-    page_icon='📚',
     layout='wide',
     initial_sidebar_state='auto'
 )
@@ -142,7 +141,7 @@ render_hero(
 )
 
 # 两个标签页
-tab1, tab2 = st.tabs(['🔤 词义消歧（WSD）对比测试', '🎭 语义角色标注（SRL）近似提取与可视化'])
+tab1, tab2 = st.tabs(['词义消歧（WSD）对比测试', '语义角色标注（SRL）近似提取与可视化'])
 
 # 模块一：词义消歧（WSD）对比测试
 with tab1:
@@ -166,7 +165,7 @@ with tab1:
     )
     
     # 添加模块说明
-    with st.expander('📝 模块说明', expanded=True):
+    with st.expander('模块说明', expanded=True):
         st.markdown('''
         **功能**：对比传统 Lesk 算法和基于 BERT 上下文向量的词义消歧方法。
         
@@ -191,9 +190,9 @@ with tab1:
     st.markdown('</div>', unsafe_allow_html=True)
     
     # 分析按钮
-    if st.button('🚀 开始分析'):
+    if st.button('开始分析'):
         # 传统方法：Lesk 算法
-        st.subheader('📚 传统方法：Lesk 算法')
+        st.subheader('传统方法：Lesk 算法')
         
         from nltk.wsd import lesk
         from nltk.tokenize import word_tokenize
@@ -230,7 +229,7 @@ with tab1:
             st.markdown('</div>', unsafe_allow_html=True)
         
         # 基于上下文向量的方法
-        st.subheader('🤖 基于上下文向量的方法')
+        st.subheader('基于上下文向量的方法')
         
         if HAS_TRANSFORMERS:
             try:
@@ -391,7 +390,7 @@ with tab2:
     )
     
     # 添加模块说明
-    with st.expander('📝 模块说明', expanded=True):
+    with st.expander('模块说明', expanded=True):
         st.markdown('''
         **功能**：使用 spaCy 进行依存句法分析，通过启发式规则近似提取谓词-论元结构。
         
@@ -408,7 +407,7 @@ with tab2:
     st.markdown('</div>', unsafe_allow_html=True)
     
     # 分析按钮
-    if st.button('🚀 开始分析', key='srl_analyze'):
+    if st.button('开始分析', key='srl_analyze'):
         nlp = load_spacy_model()
         doc = nlp(sentence)
         
@@ -476,7 +475,7 @@ with tab2:
                         break
         
         # 显示提取结果
-        st.subheader('📊 语义角色提取结果')
+        st.subheader('语义角色提取结果')
         
         # 创建表格
         data = {
@@ -492,7 +491,7 @@ with tab2:
         st.markdown('</div>', unsafe_allow_html=True)
         
         # 可视化依存关系图
-        st.subheader('🗺️ 依存关系图')
+        st.subheader('依存关系图')
         st.markdown('<div class="stCard">', unsafe_allow_html=True)
         try:
             from spacy import displacy

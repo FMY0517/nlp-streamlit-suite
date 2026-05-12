@@ -172,6 +172,26 @@ PHRASE_STYLE = {
 }
 
 
+CONSTITUENT_LABEL_EXPLANATIONS = {
+    "IP": "句子",
+    "S": "句子",
+    "SBAR": "从属从句",
+    "SBARQ": "疑问从句",
+    "SQ": "倒装句",
+    "SINV": "倒装句",
+    "NP": "名词短语",
+    "VP": "动词短语",
+    "PP": "介词短语",
+    "ADJP": "形容词短语",
+    "ADVP": "副词短语",
+    "QP": "数量短语",
+    "PRN": "插入语",
+    "WHNP": "疑问名词短语",
+    "WHADVP": "疑问副词短语",
+    "WHPP": "疑问介词短语",
+}
+
+
 def normalize_phrase_label(label: str) -> str:
     """把成分标签归一化为基础短语类型。
 
@@ -613,6 +633,51 @@ def tree_to_svg(tree) -> str | None:
         return None
 
 
+def tree_to_bracket_notation(tree) -> str:
+    """输出 Penn Treebank 风格的括号表示法。"""
+
+    if tree is None:
+        return ""
+    return tree.pformat(margin=1000000)
+
+
+def tree_from_bracket_notation(bracket_notation: str):
+    """从括号表示法重新构造 NLTK Tree，确保图形树与文本表示同源。"""
+
+    if nltk is None or not bracket_notation.strip():
+        return None
+    try:
+        return nltk.Tree.fromstring(bracket_notation)
+    except Exception:
+        return None
+
+
+def role_label(raw_label: str) -> str:
+    """把树节点标签扩展为“标签 + 中文语法角色”。"""
+
+    base_label = normalize_phrase_label(raw_label)
+    explanation = CONSTITUENT_LABEL_EXPLANATIONS.get(base_label)
+    if not explanation:
+        return raw_label
+    return f"{raw_label}: {explanation}"
+
+
+def annotate_constituency_tree(tree):
+    """给成分节点补充中文角色标签，叶子词和 POS 预终结点保持不变。"""
+
+    if tree is None or not hasattr(tree, "label"):
+        return tree
+
+    children = [
+        annotate_constituency_tree(child) if hasattr(child, "label") else child
+        for child in tree
+    ]
+
+    if len(tree) == 1 and isinstance(tree[0], str):
+        return tree.__class__(tree.label(), children)
+    return tree.__class__(role_label(tree.label()), children)
+
+
 def tree_to_pretty_text(tree) -> str:
     """把成分树转成多级缩进文本，作为图形化失败时的稳妥回退。"""
 
@@ -815,7 +880,27 @@ else:
 if constituency_tree is None:
     st.warning("当前无法生成成分句法树，请检查 benepar 及其模型是否安装成功。")
 else:
-    constituency_svg = tree_to_svg(constituency_tree)
+    bracket_notation = tree_to_bracket_notation(constituency_tree)
+    st.markdown("<h4>括号表示法</h4>", unsafe_allow_html=True)
+    st.markdown(
+        '<div class="syntax-caption">这是成分句法分析最通用的 Penn Treebank 风格括号表示法；下方树状图由这段表示法反解析后绘制，保证文本树和图形树结构一致。</div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown('<div class="tree-shell">', unsafe_allow_html=True)
+    st.markdown(
+        f"<pre class='tree-text'>{html.escape(bracket_notation)}</pre>",
+        unsafe_allow_html=True,
+    )
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    render_tree = tree_from_bracket_notation(bracket_notation)
+    labeled_tree = annotate_constituency_tree(render_tree)
+    st.markdown("<h4>树状图</h4>", unsafe_allow_html=True)
+    st.markdown(
+        '<div class="syntax-caption">树中成分节点会补充中文语法角色，例如 S/IP 表示句子，NP 表示名词短语，VP 表示动词短语；底部叶子仍保留原始词形。</div>',
+        unsafe_allow_html=True,
+    )
+    constituency_svg = tree_to_svg(labeled_tree)
     if constituency_svg:
         st.markdown('<div class="tree-shell">', unsafe_allow_html=True)
         components.html(constituency_svg, height=520, scrolling=True)
@@ -823,7 +908,7 @@ else:
     else:
         st.markdown('<div class="tree-shell">', unsafe_allow_html=True)
         st.markdown(
-            f"<pre class='tree-text'>{html.escape(tree_to_pretty_text(constituency_tree))}</pre>",
+            f"<pre class='tree-text'>{html.escape(tree_to_pretty_text(labeled_tree or constituency_tree))}</pre>",
             unsafe_allow_html=True,
         )
         st.markdown("</div>", unsafe_allow_html=True)
