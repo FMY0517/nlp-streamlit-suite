@@ -3,6 +3,7 @@ import nltk
 import numpy as np
 import sys
 import os
+import importlib.util
 from sklearn.metrics.pairwise import cosine_similarity
 import pandas as pd
 from ui_theme import inject_iekg_theme, render_guide_card, render_hero
@@ -24,17 +25,10 @@ except ImportError:
     st.info('可以通过运行: pip install --user spacy 来安装这个库。')
 
 # 尝试导入 transformers 相关库
-HAS_TRANSFORMERS = False
-TRANSFORMERS_IMPORT_ERROR = ""
-try:
-    import torch
-    from transformers import AutoModel, AutoTokenizer
-    HAS_TRANSFORMERS = True
-except Exception as exc:
-    TRANSFORMERS_IMPORT_ERROR = str(exc)
-    st.warning('transformers / torch 依赖未正确加载，词义消歧模块的 BERT 功能将不可用。')
-    st.info('如果这是部署环境，请确认 requirements.txt 中包含 transformers 和 torch，并查看 Cloud logs。')
-    st.caption(f'具体导入错误：{TRANSFORMERS_IMPORT_ERROR}')
+HAS_TRANSFORMERS = (
+    importlib.util.find_spec("torch") is not None
+    and importlib.util.find_spec("transformers") is not None
+)
 
 def download_nltk_resources():
     try:
@@ -66,8 +60,6 @@ def download_nltk_resources():
         st.info('如果本地手动处理，可以运行: python -m nltk.downloader punkt punkt_tab wordnet omw-1.4')
         return False
 
-download_nltk_resources()
-
 # 加载 spaCy 模型
 @st.cache_resource
 def load_spacy_model():
@@ -96,15 +88,18 @@ def load_spacy_model():
 @st.cache_resource
 def load_bert_model():
     if not HAS_TRANSFORMERS:
-        return None, None
+        return None, None, None
     try:
+        import torch
+        from transformers import AutoModel, AutoTokenizer
+
         model = AutoModel.from_pretrained('bert-base-uncased')
         tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased')
-        return model, tokenizer
+        return model, tokenizer, torch
     except Exception as e:
         st.error(f'加载 BERT 模型失败: {e}')
         st.info('首次运行时需要下载 BERT 模型，这可能需要一些时间...')
-        return None, None
+        return None, None, None
 
 # 设置页面配置
 st.set_page_config(
@@ -191,6 +186,9 @@ with tab1:
     
     # 分析按钮
     if st.button('开始分析'):
+        if not download_nltk_resources():
+            st.stop()
+
         # 传统方法：Lesk 算法
         st.subheader('传统方法：Lesk 算法')
         
@@ -233,12 +231,12 @@ with tab1:
         
         if HAS_TRANSFORMERS:
             try:
-                model, tokenizer = load_bert_model()
+                model, tokenizer, torch_module = load_bert_model()
                 
-                if model is not None and tokenizer is not None:
+                if model is not None and tokenizer is not None and torch_module is not None:
                     # 提取句子 1 中目标词的向量
                     inputs1 = tokenizer(sentence1, return_tensors='pt')
-                    with torch.no_grad():
+                    with torch_module.no_grad():
                         outputs1 = model(**inputs1)
                     
                     # 找到目标词的位置
@@ -257,7 +255,7 @@ with tab1:
                     
                     # 提取句子 2 中目标词的向量
                     inputs2 = tokenizer(sentence2, return_tensors='pt')
-                    with torch.no_grad():
+                    with torch_module.no_grad():
                         outputs2 = model(**inputs2)
                     
                     # 找到目标词的位置
@@ -288,7 +286,7 @@ with tab1:
                             # 使用词义定义作为输入获取向量
                             definition = synset.definition()
                             inputs = tokenizer(definition, return_tensors='pt', truncation=True, max_length=512)
-                            with torch.no_grad():
+                            with torch_module.no_grad():
                                 outputs = model(**inputs)
                             # 使用[CLS] token的向量作为词义表示
                             return outputs.last_hidden_state[0, 0, :].numpy()
