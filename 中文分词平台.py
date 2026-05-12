@@ -503,10 +503,26 @@ def render_pos_tags(tagged_tokens: list[tuple[str, str]]) -> None:
     )
 
 
+TEXT_INPUT_KEY = "segmentation_input_text"
+
 example_text = (
     "长春市长春节致辞，南京市长江大桥风景宜人。"
     "研究生命起源的人常说：中文分词真的很考验算法。"
 )
+symbol_demo_text = (
+    "今天，ＡＩ研究社說：“NLP真有趣！”同學们用Python、正則表達式和《分詞》工具，"
+    "測試全角／半角、繁體與简体是否能同步清洗。"
+)
+frequency_demo_text = (
+    "在自然语言处理课上，我们用文本、文本、文本构造小语料，再观察模型、模型、模型如何统计词频。"
+    "老师提醒大家先清洗数据，再比较分词结果，因为数据质量会影响分析，数据越稳定，结果越清晰。"
+    "同学们继续加入学习、学习、学习这样的高频词，也加入中文分词、词频统计、词频标注等表达，"
+    "这样既能看到常见词反复出现，也能直观看到词云和高频词列表的变化。"
+)
+
+
+def load_demo_text(text: str) -> None:
+    st.session_state[TEXT_INPUT_KEY] = text
 
 available_algorithms = list_available_algorithms()
 default_algorithm = available_algorithms[0] if available_algorithms else "jieba_precise"
@@ -526,12 +542,34 @@ with st.expander("依赖与运行说明", expanded=False):
         st.info(f"当前可选增强算法未全部安装：{'、'.join(missing_optional)}")
 
 
+if TEXT_INPUT_KEY not in st.session_state:
+    st.session_state[TEXT_INPUT_KEY] = example_text
+
+
 text_input = st.text_area(
     "输入待分析的中文文本",
-    value=example_text,
+    key=TEXT_INPUT_KEY,
     height=120,
-    help="适合输入带有歧义短语或多义结构的句子，例如“长春市长春节致辞”“南京市长江大桥”。",
+    help="适合输入带有歧义短语或多义结构的句子，也可以直接点击下方按钮载入课堂演示示例。",
 )
+
+demo_col1, demo_col2 = st.columns(2)
+with demo_col1:
+    st.button(
+        "载入清晰展示示例",
+        key="load_symbol_demo_text",
+        on_click=load_demo_text,
+        args=(symbol_demo_text,),
+        use_container_width=True,
+    )
+with demo_col2:
+    st.button(
+        "载入词频标注示例",
+        key="load_frequency_demo_text",
+        on_click=load_demo_text,
+        args=(frequency_demo_text,),
+        use_container_width=True,
+    )
 
 algorithm = st.selectbox(
     "选择分词算法",
