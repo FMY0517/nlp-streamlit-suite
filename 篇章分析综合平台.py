@@ -134,13 +134,36 @@ inject_iekg_theme(
 
 
 CONNECTIVE_FAMILIES = {
-    "Comparison": {"although", "though", "but", "however", "whereas"},
-    "Contingency": {"because", "since", "therefore", "so"},
-    "Temporal": {"when", "while", "after", "before", "once", "since"},
+    "Contrast": {"but", "however", "whereas"},
+    "Concession": {"although", "though"},
+    "Cause": {"because"},
+    "Result": {"therefore", "so"},
+    "Temporal": {"when", "while", "after", "before", "once"},
     "Expansion": {"and", "also", "moreover", "furthermore", "besides"},
 }
 
-CONNECTIVES_FOR_DEMO = ("because", "although", "since", "when", "however", "but")
+CONNECTIVES_FOR_DEMO = (
+    "because",
+    "although",
+    "since",
+    "when",
+    "however",
+    "but",
+    "therefore",
+    "so",
+)
+RELATION_INPUT_KEY = "discourse_relation_sentence"
+COREF_INPUT_KEY = "coref_demo_text"
+RELATION_EXAMPLES = (
+    "Although the forecast predicted heavy rain, the team continued the field trip because the equipment was waterproof.",
+    "When the server restarted, the dashboard came back online, but several users still reported missing charts.",
+    "The experiment was small; however, the results were stable, so the researchers planned a larger study.",
+)
+COREF_EXAMPLES = (
+    "Alice lent Maya her laptop after she forgot hers, and Maya returned it before the meeting ended.",
+    "Dr. Chen reviewed the paper with Li. He praised its methods, but Li said they still needed clearer examples.",
+    "The startup released a new app. It attracted students quickly because they liked its simple design.",
+)
 
 NEURAL_EDUSEG_CANDIDATES = [
     {
@@ -475,7 +498,11 @@ def classify_since(token: Any, doc: Any) -> str:
         return "Temporal"
     if any(item.text.lower() in time_cues for item in window):
         return "Temporal"
-    return "Contingency"
+    return "Cause"
+
+
+def load_demo_text(state_key: str, text: str) -> None:
+    st.session_state[state_key] = text
 
 
 def split_arguments(doc: Any, token_index: int) -> tuple[str, str]:
@@ -702,16 +729,31 @@ with tab2:
         """,
         unsafe_allow_html=True,
     )
-    st.caption("自动定位连接词，并把它们映射到对比、因果、时间、扩展四类关系。")
+    st.caption("自动定位连接词，并把它们映射到转折、让步、因果、结果、时间和递进等关系。")
     render_guide_card(
         "这一部分演示句子内部的逻辑连接方式，尤其是连接词如何提示前后两个片段之间的关系。",
         "中间橙色卡片显示连接词和关系类型，上下两块分别表示它前后的论据内容。",
         "since 会先看后面是否跟时间表达，如果像 since 2020 这样的形式更偏时间，否则优先判作原因。",
     )
+    if RELATION_INPUT_KEY not in st.session_state:
+        st.session_state[RELATION_INPUT_KEY] = (
+            "Since 2020, the company has grown, but investors remain cautious because costs are rising."
+        )
+
     relation_sentence = st.text_input(
         "输入英文句子",
-        value="Since 2020, the company has grown, but investors remain cautious because costs are rising.",
+        key=RELATION_INPUT_KEY,
     )
+    relation_cols = st.columns(3)
+    for index, example in enumerate(RELATION_EXAMPLES, start=1):
+        with relation_cols[index - 1]:
+            st.button(
+                f"例子{index}",
+                key=f"load_relation_example_{index}",
+                on_click=load_demo_text,
+                args=(RELATION_INPUT_KEY, example),
+                use_container_width=True,
+            )
 
     if st.button("分析篇章关系", key="analyze_relations", type="primary"):
         nlp, error_message = load_spacy_model()
@@ -729,7 +771,7 @@ with tab2:
         else:
             relations = extract_discourse_relations(relation_sentence, nlp)
             if not relations:
-                st.info("当前句子里没有识别到预置连接词，可以试试 because / although / since / when / but。")
+                st.info("当前句子里没有识别到预置连接词，可以试试 because / although / since / when / but / however / so。")
             else:
                 for index, relation in enumerate(relations, start=1):
                     st.markdown(f"### 关系 {index}")
@@ -771,7 +813,20 @@ with tab3:
         "John met Mary after she finished her class. He handed her a notebook because it "
         "had been left on his desk. Later, they said it was the first draft of their report."
     )
-    coref_text = st.text_area("输入英文短文", value=default_coref_text, height=180)
+    if COREF_INPUT_KEY not in st.session_state:
+        st.session_state[COREF_INPUT_KEY] = default_coref_text
+
+    coref_text = st.text_area("输入英文短文", key=COREF_INPUT_KEY, height=180)
+    coref_cols = st.columns(3)
+    for index, example in enumerate(COREF_EXAMPLES, start=1):
+        with coref_cols[index - 1]:
+            st.button(
+                f"例子{index}",
+                key=f"load_coref_example_{index}",
+                on_click=load_demo_text,
+                args=(COREF_INPUT_KEY, example),
+                use_container_width=True,
+            )
 
     if st.button("开始指代消解", key="run_coref", type="primary"):
         model, error_message = load_fastcoref_model()
